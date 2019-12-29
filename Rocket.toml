@@ -1,0 +1,20 @@
+[development]
+address = "0.0.0.0"
+port = 8001
+workers = 12
+keep_alive = 5
+log = "normal"
+
+[staging]
+address = "0.0.0.0"
+port = 8001
+workers = 8
+keep_alive = 5
+log = "normal"
+
+[production]
+address = "0.0.0.0"
+port = 8001
+workers = 12
+keep_alive = 5
+log = "critical"

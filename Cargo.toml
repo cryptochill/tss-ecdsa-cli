@@ -1,0 +1,42 @@
+[package]
+name = "tss-cli"
+version = "0.1.0"
+authors = [
+    "Kaspars Sprogis <darklow@gmail.com>"
+]
+edition = "2018"
+
+[[bin]]
+name = "tss_cli"
+path = "src/main.rs"
+
+[dependencies]
+rocket = { version = "0.4.2", default-features = false }
+rocket_contrib = { version = "0.4.2" }
+serde = "1.0"
+serde_json = "1.0"
+serde_derive = "1.0"
+hex = "0.4"
+reqwest = { version = "0.9", default-features = false }
+uuid = { version = "0.8", features = ["v4"] }
+rust-crypto = "0.2"
+libsecp256k1 = "0.3.2"
+paillier = { git = "https://github.com/KZen-networks/rust-paillier", tag = "v0.3.4"}
+zk-paillier = { git = "https://github.com/KZen-networks/zk-paillier", tag = "v0.2.5"}
+clap = { version = "2.33", features = ["yaml"] }
+
+[dependencies.multi-party-ecdsa]
+git = "https://github.com/KZen-networks/multi-party-ecdsa"
+tag = "v0.3.0"
+#branch = "master"
+
+[dependencies.curv]
+git = "https://github.com/KZen-networks/curv"
+tag = "v0.2.3"
+features = ["ec_secp256k1"]
+
+[patch.crates-io]
+rust-gmp = { version = "0.5.0", features = ["serde_support"], git = "https://github.com/KZen-networks/rust-gmp" }
+
+[profile.release]
+debug = true
