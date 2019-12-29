@@ -86,3 +86,8 @@ Syntax:
 }
 ```
 
+## Todo:
+
+1. Make HD path optional.
+2. Fix minor inconsistencies over required vs optional args, specifically manager_addr.
+
