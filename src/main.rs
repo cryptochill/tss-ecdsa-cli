@@ -20,7 +20,7 @@ use paillier::*;
 use serde_json::json;
 
 use common::{
-    keygen, keys, manager, Params, signer,
+    keygen, hd_keys, manager, Params, signer,
 };
 
 mod common;
@@ -100,7 +100,7 @@ fn main() {
         // Get HD pub key at specified path
         let path = matches.value_of("path").unwrap_or("0");
         let path_vector: Vec<BigInt> = path.split('/').map(|s| s.trim().parse::<BigInt>().unwrap()).collect();
-        let (y_sum_child, f_l_new) = keys::get_hd_key(&y_sum, path_vector.clone());
+        let (y_sum_child, f_l_new) = hd_keys::get_hd_key(&y_sum, path_vector.clone());
         let y_sum = y_sum_child.clone();
 
         // Return pub key as x,y

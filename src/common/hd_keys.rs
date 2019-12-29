@@ -1,11 +1,4 @@
-extern crate clap;
-//extern crate crypto;
 extern crate curv;
-extern crate hex;
-extern crate multi_party_ecdsa;
-extern crate paillier;
-extern crate reqwest;
-extern crate serde_json;
 
 use curv::{BigInt, FE, GE};
 use curv::cryptographic_primitives::hashing::hmac_sha512;

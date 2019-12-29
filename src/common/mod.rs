@@ -1,7 +1,7 @@
 pub mod manager;
 pub mod keygen;
 pub mod signer;
-pub mod keys;
+pub mod hd_keys;
 
 use std::{iter::repeat, thread, time, time::Duration};
 
