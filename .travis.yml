@@ -6,30 +6,10 @@ before_script:
 matrix:
   include:
     - os: osx
-      rust: stable
-      script:
-        - cargo build
-
-    - os: osx
-      rust: beta
-      script:
-        - cargo build
-
-    - os: osx
       rust: nightly
       script:
         - cargo build
         - cargo test --verbose
-
-    - os: linux
-      rust: stable
-      script:
-        - cargo build
-
-    - os: linux
-      rust: beta
-      script:
-        - cargo build
 
     - os: linux
       rust: nightly

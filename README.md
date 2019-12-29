@@ -9,7 +9,7 @@ Includes support for HD keys ([BIP32](https://github.com/bitcoin/bips/blob/maste
 
 ## Setup
 
-1.  Install [Rust](https://rustup.rs/) nightly.
+1.  Install [Rust](https://rustup.rs/) nightly ([Rocket](https://rocket.rs/v0.4/guide/getting-started/) requires the latest version of Rust nightly).
 
     ```sh
     curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
