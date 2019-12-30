@@ -31,7 +31,7 @@ pub struct TupleKey {
 
 
 pub fn sign(addr: String, party_keys: Keys, shared_keys: SharedKeys, party_id: u16, vss_scheme_vec: &mut Vec<VerifiableSS>,
-            paillier_key_vector: Vec<EncryptionKey>, y_sum: &GE, THRESHOLD: u16, message: &[u8], f_l_new: &FE)
+            paillier_key_vector: Vec<EncryptionKey>, y_sum: &GE, THRESHOLD: u16, message: &[u8], f_l_new: &FE, sign_at_path: bool)
 {
     let client = Client::new();
     let delay = time::Duration::from_millis(25);
@@ -76,41 +76,47 @@ pub fn sign(addr: String, party_keys: Keys, shared_keys: SharedKeys, party_id: u
         }
     }
 
-    // optimize!
-    let g: GE = ECPoint::generator();
-    // apply on first commitment for leader (leader is party with num=1)
-    let com_zero_new = vss_scheme_vec[0].commitments[0] + g * f_l_new;
-    // println!("old zero: {:?}, new zero: {:?}", vss_scheme_vec[0].commitments[0], com_zero_new);
-    // get iterator of all commitments and skip first zero commitment
-    let mut com_iter_unchanged = vss_scheme_vec[0].commitments.iter();
-    com_iter_unchanged.next().unwrap();
-    // iterate commitments and inject changed commitments in the beginning then aggregate into vector
-    let com_vec_new = (0..vss_scheme_vec[1].commitments.len())
-        .map(|i| {
-            if i == 0 {
-                com_zero_new
-            } else {
-                com_iter_unchanged.next().unwrap().clone()
-            }
-        })
-        .collect::<Vec<GE>>();
-    let new_vss = VerifiableSS {
-        parameters: vss_scheme_vec[0].parameters.clone(),
-        commitments: com_vec_new,
-    };
-    // replace old vss_scheme for leader with new one at position 0
+    if sign_at_path == true {
+        // optimize!
+        let g: GE = ECPoint::generator();
+        // apply on first commitment for leader (leader is party with num=1)
+        let com_zero_new = vss_scheme_vec[0].commitments[0] + g * f_l_new;
+        // println!("old zero: {:?}, new zero: {:?}", vss_scheme_vec[0].commitments[0], com_zero_new);
+        // get iterator of all commitments and skip first zero commitment
+        let mut com_iter_unchanged = vss_scheme_vec[0].commitments.iter();
+        com_iter_unchanged.next().unwrap();
+        // iterate commitments and inject changed commitments in the beginning then aggregate into vector
+        let com_vec_new = (0..vss_scheme_vec[1].commitments.len())
+            .map(|i| {
+                if i == 0 {
+                    com_zero_new
+                } else {
+                    com_iter_unchanged.next().unwrap().clone()
+                }
+            })
+            .collect::<Vec<GE>>();
+        let new_vss = VerifiableSS {
+            parameters: vss_scheme_vec[0].parameters.clone(),
+            commitments: com_vec_new,
+        };
+        // replace old vss_scheme for leader with new one at position 0
 //    println!("comparing vectors: \n{:?} \nand \n{:?}", vss_scheme_vec[0], new_vss);
 
-    vss_scheme_vec.remove(0);
-    vss_scheme_vec.insert(0, new_vss);
+        vss_scheme_vec.remove(0);
+        vss_scheme_vec.insert(0, new_vss);
 //    println!("NEW VSS VECTOR: {:?}", vss_scheme_vec);
+    }
+
     let mut private = PartyPrivate::set_private(party_keys.clone(), shared_keys);
-    if party_num_int == 1 {
-        // update u_i and x_i for leader
-        private = private.update_private_key(&f_l_new, &f_l_new);
-    } else {
-        // only update x_i for non-leaders
-        private = private.update_private_key(&FE::zero(), &f_l_new);
+
+    if sign_at_path == true {
+        if party_num_int == 1 {
+            // update u_i and x_i for leader
+            private = private.update_private_key(&f_l_new, &f_l_new);
+        } else {
+            // only update x_i for non-leaders
+            private = private.update_private_key(&FE::zero(), &f_l_new);
+        }
     }
 
     let sign_keys = SignKeys::create(

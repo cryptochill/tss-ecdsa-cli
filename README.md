@@ -26,7 +26,7 @@ Includes support for HD keys ([BIP32](https://github.com/bitcoin/bips/blob/maste
 
 ## Keygen
 
-1. Run state manager:
+1. Run state manager which is managing the communication between parties:
 
     ```sh 
     ./target/release/tss_cli manager
@@ -40,8 +40,16 @@ Includes support for HD keys ([BIP32](https://github.com/bitcoin/bips/blob/maste
 2. Run keygen:
 
     ```sh
-    # Syntax:
-    # tss_cli keygen <keysfile> <params> (threshold/parties (t+1/n). E.g. 1/3 for 2 of 3) <manager_addr> (Optional. E.g. http://127.0.0.2:8002)
+    USAGE:
+        tss_cli keygen [OPTIONS] <keysfile> <params>
+
+    OPTIONS:
+        -a, --addr <manager_addr>    URL to manager. E.g. http://127.0.0.2:8002
+
+    ARGS:
+        <keysfile>    Target keys file
+        <params>      Threshold params: threshold/parties (t+1/n). E.g. 1/3 for 2 of 3 schema.
+
    
     # Run keygen for each party
     t=1 && n=3; for i in $(seq 1 $n)
@@ -57,23 +65,42 @@ Includes support for HD keys ([BIP32](https://github.com/bitcoin/bips/blob/maste
 Output will return X and Y coordinates of a public key at specified path.
 
 ```sh
-# Syntax:
-# tss_cli signer <keysfile> <path> address
+USAGE:
+    tss_cli pubkey [OPTIONS] <keysfile>
 
-./target/release/tss_cli signer keys1.store 0/1/2 address
+OPTIONS:
+    -p, --path <path>    Derivation path
+
+ARGS:
+    <keysfile>    Keys file
+
+./target/release/tss_cli pubkey keys1.store
+# Output: {"path":"","x":"20d6d63f5baa237c747c33dd85170e186d31fa2948b3bb4615e7d08045f05614","y":"6b4ae2e5a65f750f911e92f365f8f4733949f4681efb9ebfa8d9d8fec258e96"}
+
+./target/release/tss_cli pubkey keys1.store -p 0/1/2
 # Output: {"path":"0/1/2","x":"973dba2e6c622d0d62626b5cc20e9561dd6123afca96d7b811f637900e68d99e","y":"7c1b2d91cdbfd6e9ceab48dc94aedfd021e314f4d90d18cbb8a4b40d543f85cd"}
 ```
 
 ## Sign message
 
-Run as many signer parties as you configured when used keygen.
+Run state manager and run as many signer parties as you configured when used keygen.
 
 ```sh
-Syntax:
-# tss_cli signer <keysfile> <path> sign <manager_addr> <params> (threshold/parties (t+1/n). E.g. 1/3 for 2 of 3) <message>
+USAGE:
+    tss_cli sign [OPTIONS] <keysfile> <params> <message>
 
-./target/release/tss_cli signer keys1.store 0/1/2 sign http://127.0.0.1:8001 1/2 SignMe
-./target/release/tss_cli signer keys2.store 0/1/2 sign http://127.0.0.1:8001 1/2 SignMe
+OPTIONS:
+    -a, --addr <manager_addr>    URL to manager
+    -p, --path <path>            Derivation path
+
+ARGS:
+    <keysfile>    Keys file
+    <params>      Threshold params: threshold/parties (t+1/n). E.g. 1/3 for 2 of 3 schema.
+    <message>     Message to sign in hex format
+
+
+./target/release/tss_cli sign keys1.store -p 0/1/2 -a http://127.0.0.1:8001 1/2 SignMe
+./target/release/tss_cli sign keys2.store -p 0/1/2 -a http://127.0.0.1:8001 1/2 SignMe
 
 # If all is correct, last line of the output should be json string, something like this:
 { 
@@ -85,9 +112,3 @@ Syntax:
    "y":"7c1b2d91cdbfd6e9ceab48dc94aedfd021e314f4d90d18cbb8a4b40d543f85cd"
 }
 ```
-
-## Todo:
-
-1. Make HD path optional.
-2. Fix minor inconsistencies over required vs optional args, specifically manager_addr.
-
