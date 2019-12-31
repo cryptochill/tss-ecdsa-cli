@@ -13,18 +13,13 @@ use multi_party_ecdsa::protocols::multi_party_ecdsa::gg_2018::party_i::{
 };
 use paillier::EncryptionKey;
 use reqwest::Client;
-use serde_json::json;
 
-use crate::common::{broadcast, poll_for_broadcasts, PartySignup, poll_for_p2p, aes_encrypt, sendp2p,
-                    AEAD, aes_decrypt, postb};
+use crate::common::{AEAD, aes_decrypt, aes_encrypt, broadcast, Params,
+                    PartySignup, poll_for_broadcasts, poll_for_p2p, postb, sendp2p};
 
 pub fn run_keygen(addr: &String, keysfile_path: &String, params: &Vec<&str>) {
     let THRESHOLD: u16 = params[0].parse::<u16>().unwrap();
     let PARTIES: u16 = params[1].parse::<u16>().unwrap();
-
-    // Write params.json later used by manager
-    let params_json = json!({"threshold": THRESHOLD.to_string(), "parties": PARTIES.to_string()});
-    fs::write("params.json", serde_json::to_string_pretty(&params_json).unwrap()).expect("Unable to save params!");
 
     let client = Client::new();
 
@@ -36,7 +31,8 @@ pub fn run_keygen(addr: &String, keysfile_path: &String, params: &Vec<&str>) {
     };
 
     //signup:
-    let (party_num_int, uuid) = match keygen_signup(&addr, &client).unwrap() {
+    let tn_params = Params { threshold: THRESHOLD.to_string(), parties: PARTIES.to_string() };
+    let (party_num_int, uuid) = match keygen_signup(&addr, &client, &tn_params).unwrap() {
         PartySignup { number, uuid } => (number, uuid),
     };
     println!("number: {:?}, uuid: {:?}", party_num_int, uuid);
@@ -261,10 +257,8 @@ pub fn run_keygen(addr: &String, keysfile_path: &String, params: &Vec<&str>) {
 }
 
 
-pub fn keygen_signup(addr: &String, client: &Client) -> Result<PartySignup, ()> {
-    let key = "signup-keygen".to_string();
-
-    let res_body = postb(&addr, &client, "signupkeygen", key).unwrap();
+pub fn keygen_signup(addr: &String, client: &Client, params: &Params) -> Result<PartySignup, ()> {
+    let res_body = postb(&addr, &client, "signupkeygen", params).unwrap();
     serde_json::from_str(&res_body).unwrap()
 }
 

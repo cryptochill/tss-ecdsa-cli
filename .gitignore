@@ -11,4 +11,3 @@ Cargo.lock
 .idea
 *.priv
 *.store
-params.json

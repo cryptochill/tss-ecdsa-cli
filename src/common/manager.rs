@@ -1,11 +1,11 @@
-use rocket::{post, routes, State};
-use crate::common::{Params, Key, PartySignup, Index, Entry};
 use std::collections::HashMap;
-use uuid::Uuid;
-use rocket_contrib::json::Json;
-use std::fs;
 use std::sync::RwLock;
 
+use rocket::{post, routes, State};
+use rocket_contrib::json::Json;
+use uuid::Uuid;
+
+use crate::common::{Entry, Index, Key, Params, PartySignup};
 
 pub fn run_manager() {
 //     let mut my_config = Config::development();
@@ -76,13 +76,12 @@ fn set(db_mtx: State<RwLock<HashMap<Key, String>>>, request: Json<Entry>) -> Jso
     Json(Ok(()))
 }
 
-#[post("/signupkeygen", format = "json")]
-fn signup_keygen(db_mtx: State<RwLock<HashMap<Key, String>>>) -> Json<Result<PartySignup, ()>> {
-    let data = fs::read_to_string("params.json")
-        .expect("Unable to read params, make sure config file is present in the same folder ");
-    let params: Params = serde_json::from_str(&data).unwrap();
-    let parties = params.parties.parse::<u16>().unwrap();
-
+#[post("/signupkeygen", format = "json", data = "<request>")]
+fn signup_keygen(
+    db_mtx: State<RwLock<HashMap<Key, String>>>,
+    request: Json<Params>,
+) -> Json<Result<PartySignup, ()>> {
+    let parties = request.parties.parse::<u16>().unwrap();
     let key = "signup-keygen".to_string();
 
     let party_signup = {
@@ -107,13 +106,12 @@ fn signup_keygen(db_mtx: State<RwLock<HashMap<Key, String>>>) -> Json<Result<Par
     Json(Ok(party_signup))
 }
 
-#[post("/signupsign", format = "json")]
-fn signup_sign(db_mtx: State<RwLock<HashMap<Key, String>>>) -> Json<Result<PartySignup, ()>> {
-    //read parameters:
-    let data = fs::read_to_string("params.json")
-        .expect("Unable to read params, make sure config file is present in the same folder ");
-    let params: Params = serde_json::from_str(&data).unwrap();
-    let threshold = params.threshold.parse::<u16>().unwrap();
+#[post("/signupsign", format = "json", data = "<request>")]
+fn signup_sign(
+    db_mtx: State<RwLock<HashMap<Key, String>>>,
+    request: Json<Params>,
+) -> Json<Result<PartySignup, ()>> {
+    let threshold = request.threshold.parse::<u16>().unwrap();
     let key = "signup-sign".to_string();
 
     let party_signup = {

@@ -19,25 +19,26 @@ use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
-use crate::common::{broadcast, PartySignup, poll_for_broadcasts, poll_for_p2p, sendp2p};
+use crate::common::{broadcast, Params, PartySignup, poll_for_broadcasts, poll_for_p2p, sendp2p};
 
 #[derive(Hash, PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
 pub struct TupleKey {
     pub first: String,
     pub second: String,
     pub third: String,
-    pub fourth: String,
+    pub fourth: String
 }
 
 
 pub fn sign(addr: String, party_keys: Keys, shared_keys: SharedKeys, party_id: u16, vss_scheme_vec: &mut Vec<VerifiableSS>,
-            paillier_key_vector: Vec<EncryptionKey>, y_sum: &GE, THRESHOLD: u16, message: &[u8], f_l_new: &FE, sign_at_path: bool)
+            paillier_key_vector: Vec<EncryptionKey>, y_sum: &GE, params: &Params, message: &[u8], f_l_new: &FE, sign_at_path: bool)
 {
     let client = Client::new();
     let delay = time::Duration::from_millis(25);
+    let THRESHOLD = params.threshold.parse::<u16>().unwrap();
 
     // Signup
-    let (party_num_int, uuid) = match signup(&addr, &client).unwrap() {
+    let (party_num_int, uuid) = match signup(&addr, &client, &params).unwrap() {
         PartySignup { number, uuid } => (number, uuid),
     };
 
@@ -589,15 +590,8 @@ pub fn postb<T>(addr: &String, client: &Client, path: &str, body: T) -> Option<S
     Some(res.unwrap().text().unwrap())
 }
 
-pub fn signup(addr: &String, client: &Client) -> Result<PartySignup, ()> {
-    let key = TupleKey {
-        first: "signup".to_string(),
-        second: "sign".to_string(),
-        third: "".to_string(),
-        fourth: "".to_string(),
-    };
-
-    let res_body = postb(&addr, &client, "signupsign", key).unwrap();
+pub fn signup(addr: &String, client: &Client, params: &Params) -> Result<PartySignup, ()> {
+    let res_body = postb(&addr, &client, "signupsign", params).unwrap();
     let answer: Result<PartySignup, ()> = serde_json::from_str(&res_body).unwrap();
     return answer;
 }

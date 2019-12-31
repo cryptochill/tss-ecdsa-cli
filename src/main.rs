@@ -139,9 +139,8 @@ fn main() {
                 let params: Vec<&str> = sub_matches.value_of("params").unwrap_or("").split("/").collect();
 //            println!("sign me {:?} / {:?} / {:?}", manager_addr, message, params);
                 let params = Params { threshold: params[0].to_string(), parties: params[1].to_string() };
-                let THRESHOLD: u16 = params.threshold.parse::<u16>().unwrap();
                 signer::sign(manager_addr, party_keys, shared_keys, party_id, &mut vss_scheme_vec, paillier_key_vector,
-                             &y_sum, THRESHOLD, &message, &f_l_new, !path.is_empty())
+                             &y_sum, &params, &message, &f_l_new, !path.is_empty())
             }
         }
         ("manager", Some(_matches)) => manager::run_manager(),

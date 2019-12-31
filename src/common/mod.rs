@@ -43,7 +43,7 @@ pub struct Entry {
     pub value: String,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Params {
     pub parties: String,
     pub threshold: String,
