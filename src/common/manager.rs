@@ -8,8 +8,8 @@ use uuid::Uuid;
 use crate::common::{Entry, Index, Key, Params, PartySignup};
 
 pub fn run_manager() {
-//     let mut my_config = Config::development();
-//     my_config.set_port(18001);
+    //     let mut my_config = Config::development();
+    //     my_config.set_port(18001);
     let db: HashMap<Key, String> = HashMap::new();
     let db_mtx = RwLock::new(db);
     //rocket::custom(my_config).mount("/", routes![get, set]).manage(db_mtx).launch();
@@ -47,7 +47,6 @@ pub fn run_manager() {
         .manage(db_mtx)
         .launch();
 }
-
 
 #[post("/get", format = "json", data = "<request>")]
 fn get(

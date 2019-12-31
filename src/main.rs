@@ -12,16 +12,14 @@ extern crate serde_json;
 use std::fs;
 
 use clap::{App, AppSettings, Arg, SubCommand};
-use curv::{BigInt, GE};
 use curv::cryptographic_primitives::secret_sharing::feldman_vss::VerifiableSS;
 use curv::elliptic::curves::traits::*;
+use curv::{BigInt, GE};
 use multi_party_ecdsa::protocols::multi_party_ecdsa::gg_2018::party_i::*;
 use paillier::*;
 use serde_json::json;
 
-use common::{
-    hd_keys, keygen, manager, Params, signer,
-};
+use common::{hd_keys, keygen, manager, signer, Params};
 
 mod common;
 
@@ -94,8 +92,9 @@ fn main() {
             let keysfile_path = sub_matches.value_of("keysfile").unwrap_or("");
 
             // Read data from keys file
-            let data = fs::read_to_string(keysfile_path)
-                .expect(format!("Unable to load keys file at location: {}", keysfile_path).as_str());
+            let data = fs::read_to_string(keysfile_path).expect(
+                format!("Unable to load keys file at location: {}", keysfile_path).as_str(),
+            );
             let (party_keys, shared_keys, party_id, mut vss_scheme_vec, paillier_key_vector, y_sum): (
                 Keys,
                 SharedKeys,
@@ -110,7 +109,10 @@ fn main() {
             let (f_l_new, y_sum) = match path.is_empty() {
                 true => (ECScalar::zero(), y_sum),
                 false => {
-                    let path_vector: Vec<BigInt> = path.split('/').map(|s| s.trim().parse::<BigInt>().unwrap()).collect();
+                    let path_vector: Vec<BigInt> = path
+                        .split('/')
+                        .map(|s| s.trim().parse::<BigInt>().unwrap())
+                        .collect();
                     let (y_sum_child, f_l_new) = hd_keys::get_hd_key(&y_sum, path_vector.clone());
                     (f_l_new, y_sum_child.clone())
                 }
@@ -125,7 +127,6 @@ fn main() {
                 });
                 println!("{}", ret_dict.to_string());
             } else if let Some(sub_matches) = matches.subcommand_matches("sign") {
-
                 // Parse message to sign
                 let message_str = sub_matches.value_of("message").unwrap_or("");
                 let message = match hex::decode(message_str.clone()) {
@@ -133,25 +134,52 @@ fn main() {
                     Err(_e) => message_str.as_bytes().to_vec(),
                 };
                 let message = &message[..];
-                let manager_addr = sub_matches.value_of("manager_addr").unwrap_or("http://127.0.0.1:8001").to_string();
+                let manager_addr = sub_matches
+                    .value_of("manager_addr")
+                    .unwrap_or("http://127.0.0.1:8001")
+                    .to_string();
 
                 // Parse threshold params
-                let params: Vec<&str> = sub_matches.value_of("params").unwrap_or("").split("/").collect();
-//            println!("sign me {:?} / {:?} / {:?}", manager_addr, message, params);
-                let params = Params { threshold: params[0].to_string(), parties: params[1].to_string() };
-                signer::sign(manager_addr, party_keys, shared_keys, party_id, &mut vss_scheme_vec, paillier_key_vector,
-                             &y_sum, &params, &message, &f_l_new, !path.is_empty())
+                let params: Vec<&str> = sub_matches
+                    .value_of("params")
+                    .unwrap_or("")
+                    .split("/")
+                    .collect();
+                //            println!("sign me {:?} / {:?} / {:?}", manager_addr, message, params);
+                let params = Params {
+                    threshold: params[0].to_string(),
+                    parties: params[1].to_string(),
+                };
+                signer::sign(
+                    manager_addr,
+                    party_keys,
+                    shared_keys,
+                    party_id,
+                    &mut vss_scheme_vec,
+                    paillier_key_vector,
+                    &y_sum,
+                    &params,
+                    &message,
+                    &f_l_new,
+                    !path.is_empty(),
+                )
             }
         }
         ("manager", Some(_matches)) => manager::run_manager(),
         ("keygen", Some(sub_matches)) => {
-            let addr = sub_matches.value_of("manager_addr").unwrap_or("http://127.0.0.1:8001").to_string();
+            let addr = sub_matches
+                .value_of("manager_addr")
+                .unwrap_or("http://127.0.0.1:8001")
+                .to_string();
             let keysfile_path = sub_matches.value_of("keysfile").unwrap_or("").to_string();
 
-            let params: Vec<&str> = sub_matches.value_of("params").unwrap_or("").split("/").collect();
+            let params: Vec<&str> = sub_matches
+                .value_of("params")
+                .unwrap_or("")
+                .split("/")
+                .collect();
             keygen::run_keygen(&addr, &keysfile_path, &params);
         }
         _ => {}
     }
 }
-

@@ -1,22 +1,25 @@
 extern crate curv;
 
-use curv::{BigInt, FE, GE};
-use curv::cryptographic_primitives::hashing::hmac_sha512;
-use curv::elliptic::curves::traits::*;
-use curv::cryptographic_primitives::hashing::traits::KeyedHash;
 use curv::arithmetic::traits::Converter;
+use curv::cryptographic_primitives::hashing::hmac_sha512;
+use curv::cryptographic_primitives::hashing::traits::KeyedHash;
+use curv::elliptic::curves::traits::*;
+use curv::{BigInt, FE, GE};
 
 pub fn get_hd_key(y_sum: &GE, path_vector: Vec<BigInt>) -> (GE, FE) {
-// generate a random but shared chain code, this will do
+    // generate a random but shared chain code, this will do
     let chain_code = GE::generator();
-//    println!("chain code {:?}", chain_code);
-// derive a new pubkey and LR sequence, y_sum becomes a new child pub key
-    let (y_sum_child, f_l_new, _cc_new) =
-        hd_key(path_vector, &y_sum, &chain_code.bytes_compressed_to_big_int());
+    //    println!("chain code {:?}", chain_code);
+    // derive a new pubkey and LR sequence, y_sum becomes a new child pub key
+    let (y_sum_child, f_l_new, _cc_new) = hd_key(
+        path_vector,
+        &y_sum,
+        &chain_code.bytes_compressed_to_big_int(),
+    );
     let y_sum = y_sum_child.clone();
-//    println!("New public key: {:?}", &y_sum);
-//    println!("Public key X: {:?}", &y_sum.x_coor());
-//    println!("Public key Y: {:?}", &y_sum.y_coor());
+    //    println!("New public key: {:?}", &y_sum);
+    //    println!("Public key X: {:?}", &y_sum.x_coor());
+    //    println!("Public key Y: {:?}", &y_sum.y_coor());
     (y_sum, f_l_new)
 }
 
@@ -24,8 +27,7 @@ pub fn hd_key(
     mut location_in_hir: Vec<BigInt>,
     pubkey: &GE,
     chain_code_bi: &BigInt,
-) -> (GE, FE, GE)
-{
+) -> (GE, FE, GE) {
     let mask = BigInt::from(2).pow(256) - BigInt::one();
     // let public_key = self.public.q.clone();
 
@@ -61,4 +63,3 @@ pub fn hd_key(
             });
     (public_key_new_child, f_l_new, cc_new)
 }
-

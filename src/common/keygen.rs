@@ -2,11 +2,11 @@ use std::{fs, time};
 
 use curv::{
     arithmetic::traits::Converter,
-    BigInt,
     cryptographic_primitives::{
         proofs::sigma_dlog::DLogProof, secret_sharing::feldman_vss::VerifiableSS,
     },
-    elliptic::curves::traits::{ECPoint, ECScalar}, FE, GE,
+    elliptic::curves::traits::{ECPoint, ECScalar},
+    BigInt, FE, GE,
 };
 use multi_party_ecdsa::protocols::multi_party_ecdsa::gg_2018::party_i::{
     KeyGenBroadcastMessage1, KeyGenDecommitMessage1, Keys, Parameters,
@@ -14,8 +14,10 @@ use multi_party_ecdsa::protocols::multi_party_ecdsa::gg_2018::party_i::{
 use paillier::EncryptionKey;
 use reqwest::Client;
 
-use crate::common::{AEAD, aes_decrypt, aes_encrypt, broadcast, Params,
-                    PartySignup, poll_for_broadcasts, poll_for_p2p, postb, sendp2p};
+use crate::common::{
+    aes_decrypt, aes_encrypt, broadcast, poll_for_broadcasts, poll_for_p2p, postb, sendp2p, Params,
+    PartySignup, AEAD,
+};
 
 pub fn run_keygen(addr: &String, keysfile_path: &String, params: &Vec<&str>) {
     let THRESHOLD: u16 = params[0].parse::<u16>().unwrap();
@@ -31,7 +33,10 @@ pub fn run_keygen(addr: &String, keysfile_path: &String, params: &Vec<&str>) {
     };
 
     //signup:
-    let tn_params = Params { threshold: THRESHOLD.to_string(), parties: PARTIES.to_string() };
+    let tn_params = Params {
+        threshold: THRESHOLD.to_string(),
+        parties: PARTIES.to_string(),
+    };
     let (party_num_int, uuid) = match keygen_signup(&addr, &client, &tn_params).unwrap() {
         PartySignup { number, uuid } => (number, uuid),
     };
@@ -49,7 +54,7 @@ pub fn run_keygen(addr: &String, keysfile_path: &String, params: &Vec<&str>) {
         serde_json::to_string(&bc_i).unwrap(),
         uuid.clone(),
     )
-        .is_ok());
+    .is_ok());
     let round1_ans_vec = poll_for_broadcasts(
         &addr,
         &client,
@@ -76,7 +81,7 @@ pub fn run_keygen(addr: &String, keysfile_path: &String, params: &Vec<&str>) {
         serde_json::to_string(&decom_i).unwrap(),
         uuid.clone(),
     )
-        .is_ok());
+    .is_ok());
     let round2_ans_vec = poll_for_broadcasts(
         &addr,
         &client,
@@ -131,7 +136,7 @@ pub fn run_keygen(addr: &String, keysfile_path: &String, params: &Vec<&str>) {
                 serde_json::to_string(&aead_pack_i).unwrap(),
                 uuid.clone(),
             )
-                .is_ok());
+            .is_ok());
             j += 1;
         }
     }
@@ -172,7 +177,7 @@ pub fn run_keygen(addr: &String, keysfile_path: &String, params: &Vec<&str>) {
         serde_json::to_string(&vss_scheme).unwrap(),
         uuid.clone(),
     )
-        .is_ok());
+    .is_ok());
     let round4_ans_vec = poll_for_broadcasts(
         &addr,
         &client,
@@ -214,7 +219,7 @@ pub fn run_keygen(addr: &String, keysfile_path: &String, params: &Vec<&str>) {
         serde_json::to_string(&dlog_proof).unwrap(),
         uuid.clone(),
     )
-        .is_ok());
+    .is_ok());
     let round5_ans_vec = poll_for_broadcasts(
         &addr,
         &client,
@@ -251,15 +256,12 @@ pub fn run_keygen(addr: &String, keysfile_path: &String, params: &Vec<&str>) {
         paillier_key_vec,
         y_sum,
     ))
-        .unwrap();
+    .unwrap();
     println!("Keys data written to file: {:?}", keysfile_path);
     fs::write(&keysfile_path, keygen_json).expect("Unable to save !");
 }
-
 
 pub fn keygen_signup(addr: &String, client: &Client, params: &Params) -> Result<PartySignup, ()> {
     let res_body = postb(&addr, &client, "signupkeygen", params).unwrap();
     serde_json::from_str(&res_body).unwrap()
 }
-
-

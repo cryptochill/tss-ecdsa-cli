@@ -7,11 +7,11 @@ extern crate serde_json;
 
 use std::time;
 
-use curv::{BigInt, FE, GE};
 use curv::cryptographic_primitives::proofs::sigma_correct_homomorphic_elgamal_enc::HomoELGamalProof;
 use curv::cryptographic_primitives::proofs::sigma_dlog::DLogProof;
 use curv::cryptographic_primitives::secret_sharing::feldman_vss::VerifiableSS;
 use curv::elliptic::curves::traits::*;
+use curv::{BigInt, FE, GE};
 use multi_party_ecdsa::protocols::multi_party_ecdsa::gg_2018::mta::*;
 use multi_party_ecdsa::protocols::multi_party_ecdsa::gg_2018::party_i::*;
 use paillier::*;
@@ -19,20 +19,29 @@ use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
-use crate::common::{broadcast, Params, PartySignup, poll_for_broadcasts, poll_for_p2p, sendp2p};
+use crate::common::{broadcast, poll_for_broadcasts, poll_for_p2p, sendp2p, Params, PartySignup};
 
 #[derive(Hash, PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
 pub struct TupleKey {
     pub first: String,
     pub second: String,
     pub third: String,
-    pub fourth: String
+    pub fourth: String,
 }
 
-
-pub fn sign(addr: String, party_keys: Keys, shared_keys: SharedKeys, party_id: u16, vss_scheme_vec: &mut Vec<VerifiableSS>,
-            paillier_key_vector: Vec<EncryptionKey>, y_sum: &GE, params: &Params, message: &[u8], f_l_new: &FE, sign_at_path: bool)
-{
+pub fn sign(
+    addr: String,
+    party_keys: Keys,
+    shared_keys: SharedKeys,
+    party_id: u16,
+    vss_scheme_vec: &mut Vec<VerifiableSS>,
+    paillier_key_vector: Vec<EncryptionKey>,
+    y_sum: &GE,
+    params: &Params,
+    message: &[u8],
+    f_l_new: &FE,
+    sign_at_path: bool,
+) {
     let client = Client::new();
     let delay = time::Duration::from_millis(25);
     let THRESHOLD = params.threshold.parse::<u16>().unwrap();
@@ -54,7 +63,7 @@ pub fn sign(addr: String, party_keys: Keys, shared_keys: SharedKeys, party_id: u
         serde_json::to_string(&party_id).unwrap(),
         uuid.clone(),
     )
-        .is_ok());
+    .is_ok());
 
     let round0_ans_vec = poll_for_broadcasts(
         &addr,
@@ -101,11 +110,11 @@ pub fn sign(addr: String, party_keys: Keys, shared_keys: SharedKeys, party_id: u
             commitments: com_vec_new,
         };
         // replace old vss_scheme for leader with new one at position 0
-//    println!("comparing vectors: \n{:?} \nand \n{:?}", vss_scheme_vec[0], new_vss);
+        //    println!("comparing vectors: \n{:?} \nand \n{:?}", vss_scheme_vec[0], new_vss);
 
         vss_scheme_vec.remove(0);
         vss_scheme_vec.insert(0, new_vss);
-//    println!("NEW VSS VECTOR: {:?}", vss_scheme_vec);
+        //    println!("NEW VSS VECTOR: {:?}", vss_scheme_vec);
     }
 
     let mut private = PartyPrivate::set_private(party_keys.clone(), shared_keys);
@@ -138,7 +147,7 @@ pub fn sign(addr: String, party_keys: Keys, shared_keys: SharedKeys, party_id: u
         serde_json::to_string(&(com.clone(), m_a_k.clone())).unwrap(),
         uuid.clone(),
     )
-        .is_ok());
+    .is_ok());
     let round1_ans_vec = poll_for_broadcasts(
         &addr,
         &client,
@@ -156,7 +165,7 @@ pub fn sign(addr: String, party_keys: Keys, shared_keys: SharedKeys, party_id: u
     for i in 1..THRESHOLD + 2 {
         if i == party_num_int {
             bc1_vec.push(com.clone());
-            //   m_a_vec.push(m_a_k.clone());
+        //   m_a_vec.push(m_a_k.clone());
         } else {
             //     if signers_vec.contains(&(i as usize)) {
             let (bc1_j, m_a_party_j): (SignBroadcastPhase1, MessageA) =
@@ -209,7 +218,7 @@ pub fn sign(addr: String, party_keys: Keys, shared_keys: SharedKeys, party_id: u
                     .unwrap(),
                 uuid.clone(),
             )
-                .is_ok());
+            .is_ok());
             j = j + 1;
         }
     }
@@ -242,9 +251,9 @@ pub fn sign(addr: String, party_keys: Keys, shared_keys: SharedKeys, party_id: u
     let xi_com_vec = Keys::get_commitments_to_xi(&vss_scheme_vec);
     let mut j = 0;
     for i in 1..THRESHOLD + 2 {
-//        println!("mbproof p={}, i={}, j={}", party_num_int, i, j);
+        //        println!("mbproof p={}, i={}, j={}", party_num_int, i, j);
         if i != party_num_int {
-//            println!("verifying: p={}, i={}, j={}", party_num_int, i, j);
+            //            println!("verifying: p={}, i={}, j={}", party_num_int, i, j);
             let m_b = m_b_gamma_rec_vec[j].clone();
 
             let alpha_ij_gamma = m_b
@@ -280,7 +289,7 @@ pub fn sign(addr: String, party_keys: Keys, shared_keys: SharedKeys, party_id: u
         serde_json::to_string(&delta_i).unwrap(),
         uuid.clone(),
     )
-        .is_ok());
+    .is_ok());
     let round3_ans_vec = poll_for_broadcasts(
         &addr,
         &client,
@@ -309,7 +318,7 @@ pub fn sign(addr: String, party_keys: Keys, shared_keys: SharedKeys, party_id: u
         serde_json::to_string(&decommit).unwrap(),
         uuid.clone(),
     )
-        .is_ok());
+    .is_ok());
     let round4_ans_vec = poll_for_broadcasts(
         &addr,
         &client,
@@ -340,7 +349,7 @@ pub fn sign(addr: String, party_keys: Keys, shared_keys: SharedKeys, party_id: u
 
     // we assume the message is already hashed (by the signer).
     let message_bn = BigInt::from(message);
-//    println!("message_bn INT: {}", message_bn);
+    //    println!("message_bn INT: {}", message_bn);
     let message_int = BigInt::from(message);
     let two = BigInt::from(2);
     let message_bn = message_bn.modulus(&two.pow(256));
@@ -358,7 +367,7 @@ pub fn sign(addr: String, party_keys: Keys, shared_keys: SharedKeys, party_id: u
         serde_json::to_string(&phase5_com).unwrap(),
         uuid.clone(),
     )
-        .is_ok());
+    .is_ok());
     let round5_ans_vec = poll_for_broadcasts(
         &addr,
         &client,
@@ -386,7 +395,7 @@ pub fn sign(addr: String, party_keys: Keys, shared_keys: SharedKeys, party_id: u
         serde_json::to_string(&(phase_5a_decom.clone(), helgamal_proof.clone())).unwrap(),
         uuid.clone(),
     )
-        .is_ok());
+    .is_ok());
     let round6_ans_vec = poll_for_broadcasts(
         &addr,
         &client,
@@ -432,7 +441,7 @@ pub fn sign(addr: String, party_keys: Keys, shared_keys: SharedKeys, party_id: u
         serde_json::to_string(&phase5_com2).unwrap(),
         uuid.clone(),
     )
-        .is_ok());
+    .is_ok());
     let round7_ans_vec = poll_for_broadcasts(
         &addr,
         &client,
@@ -460,7 +469,7 @@ pub fn sign(addr: String, party_keys: Keys, shared_keys: SharedKeys, party_id: u
         serde_json::to_string(&phase_5d_decom2).unwrap(),
         uuid.clone(),
     )
-        .is_ok());
+    .is_ok());
     let round8_ans_vec = poll_for_broadcasts(
         &addr,
         &client,
@@ -499,7 +508,7 @@ pub fn sign(addr: String, party_keys: Keys, shared_keys: SharedKeys, party_id: u
         serde_json::to_string(&s_i).unwrap(),
         uuid.clone(),
     )
-        .is_ok());
+    .is_ok());
     let round9_ans_vec = poll_for_broadcasts(
         &addr,
         &client,
@@ -522,42 +531,42 @@ pub fn sign(addr: String, party_keys: Keys, shared_keys: SharedKeys, party_id: u
     let sig = local_sig
         .output_signature(&s_i_vec)
         .expect("verification failed");
-//    println!(" \n");
-//    println!("party {:?} Output Signature: \n", party_num_int);
-//    println!("SIG msg: {:?}", sig.m);
-//    println!("R: {:?}", sig.r);
-//    println!("s: {:?} \n", sig.s);
-//    println!("child pubkey: {:?} \n", y_sum);
+    //    println!(" \n");
+    //    println!("party {:?} Output Signature: \n", party_num_int);
+    //    println!("SIG msg: {:?}", sig.m);
+    //    println!("R: {:?}", sig.r);
+    //    println!("s: {:?} \n", sig.s);
+    //    println!("child pubkey: {:?} \n", y_sum);
 
-//    println!("pubkey: {:?} \n", y_sum);
-//    println!("verifying signature with public key");
+    //    println!("pubkey: {:?} \n", y_sum);
+    //    println!("verifying signature with public key");
     verify(&sig, &y_sum, &message_bn).expect("false");
-//    println!("verifying signature with child pub key");
-//    verify(&sig, &new_key, &message_bn).expect("false");
+    //    println!("verifying signature with child pub key");
+    //    verify(&sig, &new_key, &message_bn).expect("false");
 
-//    println!("{:?}", sig.recid.clone());
-//    print(sig.recid.clone()
+    //    println!("{:?}", sig.recid.clone());
+    //    print(sig.recid.clone()
 
     let ret_dict = json!({
-                "r": (BigInt::from(&(sig.r.get_element())[..])).to_str_radix(16),
-                "s": (BigInt::from(&(sig.s.get_element())[..])).to_str_radix(16),
-                "status": "signature_ready",
-                "recid": sig.recid.clone(),
-                "x": &y_sum.x_coor(),
-                "y": &y_sum.y_coor(),
-                "msg_int": message_int,
-            });
+        "r": (BigInt::from(&(sig.r.get_element())[..])).to_str_radix(16),
+        "s": (BigInt::from(&(sig.s.get_element())[..])).to_str_radix(16),
+        "status": "signature_ready",
+        "recid": sig.recid.clone(),
+        "x": &y_sum.x_coor(),
+        "y": &y_sum.y_coor(),
+        "msg_int": message_int,
+    });
     println!("{}", ret_dict.to_string());
 
-//    fs::write("signature".to_string(), sign_json).expect("Unable to save !");
+    //    fs::write("signature".to_string(), sign_json).expect("Unable to save !");
 
-//    println!("Public key Y: {:?}", to_bitcoin_public_key(y_sum.get_element()).to_bytes());
-//    println!("Public child key X: {:?}", &new_key.x_coor());
-//    println!("Public child key Y: {:?}", &new_key.y_coor());
-//    println!("Public key big int: {:?}", &y_sum.bytes_compressed_to_big_int());
-//    println!("Public key ge: {:?}", &y_sum.get_element().serialize());
-//    println!("Public key ge: {:?}", PK::serialize_uncompressed(&y_sum.get_element()));
-//    println!("New public key: {:?}", &y_sum.x_coor);
+    //    println!("Public key Y: {:?}", to_bitcoin_public_key(y_sum.get_element()).to_bytes());
+    //    println!("Public child key X: {:?}", &new_key.x_coor());
+    //    println!("Public child key Y: {:?}", &new_key.y_coor());
+    //    println!("Public key big int: {:?}", &y_sum.bytes_compressed_to_big_int());
+    //    println!("Public key ge: {:?}", &y_sum.get_element().serialize());
+    //    println!("Public key ge: {:?}", PK::serialize_uncompressed(&y_sum.get_element()));
+    //    println!("New public key: {:?}", &y_sum.x_coor);
 }
 
 fn format_vec_from_reads<'a, T: serde::Deserialize<'a> + Clone>(
@@ -565,8 +574,7 @@ fn format_vec_from_reads<'a, T: serde::Deserialize<'a> + Clone>(
     party_num: usize,
     value_i: T,
     new_vec: &'a mut Vec<T>,
-)
-{
+) {
     let mut j = 0;
     for i in 1..ans_vec.len() + 2 {
         if i == party_num {
@@ -580,8 +588,8 @@ fn format_vec_from_reads<'a, T: serde::Deserialize<'a> + Clone>(
 }
 
 pub fn postb<T>(addr: &String, client: &Client, path: &str, body: T) -> Option<String>
-    where
-        T: serde::ser::Serialize,
+where
+    T: serde::ser::Serialize,
 {
     let res = client
         .post(&format!("{}/{}", addr, path))

@@ -1,7 +1,7 @@
-pub mod manager;
-pub mod keygen;
-pub mod signer;
 pub mod hd_keys;
+pub mod keygen;
+pub mod manager;
+pub mod signer;
 
 use std::{iter::repeat, thread, time, time::Duration};
 
@@ -73,27 +73,24 @@ pub fn aes_decrypt(key: &[u8], aead_pack: AEAD) -> Vec<u8> {
     out
 }
 
-pub fn postb<T>(addr:&String, client: &Client, path: &str, body: T) -> Option<String>
-    where
-        T: serde::ser::Serialize,
+pub fn postb<T>(addr: &String, client: &Client, path: &str, body: T) -> Option<String>
+where
+    T: serde::ser::Serialize,
 {
-//    let mut addr = env::args()
-//        .nth(4)
-//        .unwrap_or_else(|| "http://127.0.0.1:8001".to_string());
-//    for argument in env::args() {
-//        if argument.contains("://") {
-//            let addr_parts: Vec<&str> = argument.split("http:").collect();
-//            addr = format!("http:{}", addr_parts[1]);
-//        }
-//    }
+    //    let mut addr = env::args()
+    //        .nth(4)
+    //        .unwrap_or_else(|| "http://127.0.0.1:8001".to_string());
+    //    for argument in env::args() {
+    //        if argument.contains("://") {
+    //            let addr_parts: Vec<&str> = argument.split("http:").collect();
+    //            addr = format!("http:{}", addr_parts[1]);
+    //        }
+    //    }
     let retries = 3;
     let retry_delay = time::Duration::from_millis(250);
     for _i in 1..retries {
         let addr = format!("{}/{}", addr, path);
-        let res = client
-            .post(&addr)
-            .json(&body)
-            .send();
+        let res = client.post(&addr).json(&body).send();
 
         if let Ok(mut res) = res {
             return Some(res.text().unwrap());
