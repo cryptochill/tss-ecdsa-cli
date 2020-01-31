@@ -11,13 +11,13 @@ name = "tss_cli"
 path = "src/main.rs"
 
 [dependencies]
-rocket = { version = "0.4.2", default-features = false }
+rocket = { version = "0.4.2", default-features = false, features = ["tls"] }
 rocket_contrib = { version = "0.4.2" }
 serde = "1.0"
 serde_json = "1.0"
 serde_derive = "1.0"
 hex = "0.4"
-reqwest = { version = "0.9", default-features = false }
+reqwest = { version = "0.10.1", default-features = false, features = ["native-tls", "json", "blocking"] }
 uuid = { version = "0.8", features = ["v4"] }
 rust-crypto = "0.2"
 libsecp256k1 = "0.3.2"
@@ -39,4 +39,4 @@ features = ["ec_secp256k1"]
 rust-gmp = { version = "0.5.0", features = ["serde_support"], git = "https://github.com/KZen-networks/rust-gmp" }
 
 [profile.release]
-debug = true
+opt-level = 2

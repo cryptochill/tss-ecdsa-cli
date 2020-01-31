@@ -12,7 +12,7 @@ use multi_party_ecdsa::protocols::multi_party_ecdsa::gg_2018::party_i::{
     KeyGenBroadcastMessage1, KeyGenDecommitMessage1, Keys, Parameters,
 };
 use paillier::EncryptionKey;
-use reqwest::Client;
+use reqwest::blocking::Client;
 
 use crate::common::{
     aes_decrypt, aes_encrypt, broadcast, poll_for_broadcasts, poll_for_p2p, postb, sendp2p, Params,

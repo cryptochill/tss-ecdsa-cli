@@ -15,7 +15,7 @@ use curv::{BigInt, FE, GE};
 use multi_party_ecdsa::protocols::multi_party_ecdsa::gg_2018::mta::*;
 use multi_party_ecdsa::protocols::multi_party_ecdsa::gg_2018::party_i::*;
 use paillier::*;
-use reqwest::Client;
+use reqwest::blocking::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
