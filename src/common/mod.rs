@@ -1,8 +1,3 @@
-pub mod hd_keys;
-pub mod keygen;
-pub mod manager;
-pub mod signer;
-
 use std::{iter::repeat, thread, time, time::Duration};
 
 use crypto::{
@@ -17,6 +12,11 @@ use curv::{
 };
 use reqwest::blocking::Client;
 use serde::{Deserialize, Serialize};
+
+pub mod hd_keys;
+pub mod keygen;
+pub mod manager;
+pub mod signer;
 
 pub type Key = String;
 
@@ -43,10 +43,18 @@ pub struct Entry {
     pub value: String,
 }
 
+#[derive(Clone, PartialEq, Debug, Serialize, Deserialize)]
+pub struct EntryResponse {
+    pub key: Key,
+    pub value: String,
+    pub last_uuid: String,
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Params {
     pub parties: String,
     pub threshold: String,
+    pub signer_id: String,
 }
 
 #[allow(dead_code)]
@@ -156,11 +164,22 @@ pub fn poll_for_broadcasts(
                 // add delay to allow the server to process request:
                 thread::sleep(delay);
                 let res_body = postb(&addr, &client, "get", index.clone()).unwrap();
-                let answer: Result<Entry, ()> = serde_json::from_str(&res_body).unwrap();
+                let answer: Result<EntryResponse, ()> = serde_json::from_str(&res_body).unwrap();
+                //                println!("{:?} / {:?} / answer: {:?}", party_num, n, answer);
                 if let Ok(answer) = answer {
-                    ans_vec.push(answer.value);
-                    println!("[{:?}] party {:?} => party {:?}", round, i, party_num);
-                    break;
+                    let last_uuid: String = answer.last_uuid;
+                    if last_uuid != sender_uuid {
+                        panic!("NEW_UUID found, restart signer...");
+                    }
+                    if answer.key == "last_uuid" {
+                        if last_uuid != sender_uuid {
+                            panic!("NEW_UUID found, restart signer...");
+                        }
+                    } else {
+                        ans_vec.push(answer.value);
+                        println!("[{:?}] party {:?} => party {:?}", round, i, party_num);
+                        break;
+                    }
                 }
             }
         }
@@ -186,11 +205,17 @@ pub fn poll_for_p2p(
                 // add delay to allow the server to process request:
                 thread::sleep(delay);
                 let res_body = postb(&addr, &client, "get", index.clone()).unwrap();
-                let answer: Result<Entry, ()> = serde_json::from_str(&res_body).unwrap();
+                let answer: Result<EntryResponse, ()> = serde_json::from_str(&res_body).unwrap();
                 if let Ok(answer) = answer {
-                    ans_vec.push(answer.value);
-                    println!("[{:?}] party {:?} => party {:?}", round, i, party_num);
-                    break;
+                    let last_uuid: String = answer.last_uuid;
+                    if last_uuid != sender_uuid {
+                        panic!("NEW_UUID found, restart signer...");
+                    }
+                    if answer.key != "last_uuid" {
+                        ans_vec.push(answer.value);
+                        println!("[{:?}] party {:?} => party {:?}", round, i, party_num);
+                        break;
+                    }
                 }
             }
         }

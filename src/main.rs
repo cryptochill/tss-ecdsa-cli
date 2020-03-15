@@ -84,6 +84,11 @@ fn main() {
                     .long("addr")
                     .takes_value(true)
                     .help("URL to manager"))
+                .arg(Arg::with_name("signer_id")
+                    .short("i")
+                    .long("sid")
+                    .takes_value(true)
+                    .help("Unique Signer ID to identify signer"))
         ])
         .get_matches();
 
@@ -138,6 +143,7 @@ fn main() {
                     .value_of("manager_addr")
                     .unwrap_or("http://127.0.0.1:8001")
                     .to_string();
+                let signer_id = sub_matches.value_of("signer_id").unwrap_or("").to_string();
 
                 // Parse threshold params
                 let params: Vec<&str> = sub_matches
@@ -149,6 +155,7 @@ fn main() {
                 let params = Params {
                     threshold: params[0].to_string(),
                     parties: params[1].to_string(),
+                    signer_id: signer_id,
                 };
                 signer::sign(
                     manager_addr,

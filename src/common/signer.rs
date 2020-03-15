@@ -51,7 +51,7 @@ pub fn sign(
         PartySignup { number, uuid } => (number, uuid),
     };
 
-    let debug = json!({"manager_addr": &addr, "party_num": party_num_int, "uuid": uuid});
+    let debug = json!({"manager_addr": &addr, "party_num": party_num_int, "uuid": uuid, "signer_id": params.signer_id});
     println!("{}", serde_json::to_string_pretty(&debug).unwrap());
 
     // round 0: collect signers IDs
@@ -135,6 +135,21 @@ pub fn sign(
         signers_vec[(party_num_int - 1) as usize],
         &signers_vec,
     );
+
+    println!(
+        "{:?}, {:?}, {:?}",
+        uuid.clone(),
+        party_num_int,
+        params.signer_id.to_string()
+    );
+    //    let ps: PartySignupWithId = PartySignupWithId {
+    //        uuid: uuid.clone(),
+    //        number: party_num_int,
+    //        signer_id: params.signer_id.to_string(),
+    //        action: 0,
+    //                message: format!("{}", message),
+    //    };
+    //    postb(&addr, &client, "cleanup", ps.clone());
 
     //////////////////////////////////////////////////////////////////////////////
     let (com, decommit) = sign_keys.phase1_broadcast();
@@ -557,6 +572,15 @@ pub fn sign(
         "msg_int": message_int,
     });
     println!("{}", ret_dict.to_string());
+
+    //    let ps: PartySignupWithId = PartySignupWithId {
+    //        uuid: uuid.clone(),
+    //        number: party_num_int,
+    //        signer_id: params.signer_id.to_string(),
+    //        action: 1,
+    //        //        message: "".to_string(),
+    //    };
+    //    postb(&addr, &client, "cleanup", ps.clone()).unwrap();
 
     //    fs::write("signature".to_string(), sign_json).expect("Unable to save !");
 
