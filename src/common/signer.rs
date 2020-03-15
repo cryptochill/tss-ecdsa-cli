@@ -142,14 +142,6 @@ pub fn sign(
         party_num_int,
         params.signer_id.to_string()
     );
-    //    let ps: PartySignupWithId = PartySignupWithId {
-    //        uuid: uuid.clone(),
-    //        number: party_num_int,
-    //        signer_id: params.signer_id.to_string(),
-    //        action: 0,
-    //                message: format!("{}", message),
-    //    };
-    //    postb(&addr, &client, "cleanup", ps.clone());
 
     //////////////////////////////////////////////////////////////////////////////
     let (com, decommit) = sign_keys.phase1_broadcast();
