@@ -1,5 +1,9 @@
 language: rust
 
+# pin temporarily because rustfmt is not available in nightly
+rust:
+  - nightly-2020-07-11
+
 before_script:
   - rustup component add rustfmt-preview
   - cargo fmt --all -- --check
@@ -7,13 +11,11 @@ before_script:
 matrix:
   include:
     - os: osx
-      rust: nightly
       script:
         - cargo build
         - cargo test --verbose
 
     - os: linux
-      rust: nightly
       script:
         - cargo build
         - cargo test --verbose
