@@ -101,7 +101,18 @@ fn signup_keygen(
         }
     };
 
-    hm.insert(key, serde_json::to_string(&party_signup).unwrap());
+    if party_signup.number == parties {
+        hm.insert(
+            key,
+            serde_json::to_string(&PartySignup {
+                number: 0,
+                uuid: Uuid::new_v4().to_string(),
+            })
+            .unwrap(),
+        );
+    } else {
+        hm.insert(key, serde_json::to_string(&party_signup).unwrap());
+    }
     Json(Ok(party_signup))
 }
 
@@ -130,7 +141,17 @@ fn signup_sign(
             }
         }
     };
-
-    hm.insert(key, serde_json::to_string(&party_signup).unwrap());
+    if party_signup.number == threshold + 1 {
+        hm.insert(
+            key,
+            serde_json::to_string(&PartySignup {
+                number: 0,
+                uuid: Uuid::new_v4().to_string(),
+            })
+            .unwrap(),
+        );
+    } else {
+        hm.insert(key, serde_json::to_string(&party_signup).unwrap());
+    }
     Json(Ok(party_signup))
 }
