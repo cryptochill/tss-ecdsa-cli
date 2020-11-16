@@ -83,8 +83,9 @@ fn signup_keygen(
     let parties = request.parties.parse::<u16>().unwrap();
     let key = "signup-keygen".to_string();
 
+    let mut hm = db_mtx.write().unwrap();
+
     let party_signup = {
-        let hm = db_mtx.read().unwrap();
         let value = hm.get(&key).unwrap();
         let client_signup: PartySignup = serde_json::from_str(&value).unwrap();
         if client_signup.number < parties {
@@ -100,8 +101,18 @@ fn signup_keygen(
         }
     };
 
-    let mut hm = db_mtx.write().unwrap();
-    hm.insert(key, serde_json::to_string(&party_signup).unwrap());
+    if party_signup.number == parties {
+        hm.insert(
+            key,
+            serde_json::to_string(&PartySignup {
+                number: 0,
+                uuid: Uuid::new_v4().to_string(),
+            })
+            .unwrap(),
+        );
+    } else {
+        hm.insert(key, serde_json::to_string(&party_signup).unwrap());
+    }
     Json(Ok(party_signup))
 }
 
@@ -113,8 +124,9 @@ fn signup_sign(
     let threshold = request.threshold.parse::<u16>().unwrap();
     let key = "signup-sign".to_string();
 
+    let mut hm = db_mtx.write().unwrap();
+
     let party_signup = {
-        let hm = db_mtx.read().unwrap();
         let value = hm.get(&key).unwrap();
         let client_signup: PartySignup = serde_json::from_str(&value).unwrap();
         if client_signup.number < threshold + 1 {
@@ -129,8 +141,17 @@ fn signup_sign(
             }
         }
     };
-
-    let mut hm = db_mtx.write().unwrap();
-    hm.insert(key, serde_json::to_string(&party_signup).unwrap());
+    if party_signup.number == threshold + 1 {
+        hm.insert(
+            key,
+            serde_json::to_string(&PartySignup {
+                number: 0,
+                uuid: Uuid::new_v4().to_string(),
+            })
+            .unwrap(),
+        );
+    } else {
+        hm.insert(key, serde_json::to_string(&party_signup).unwrap());
+    }
     Json(Ok(party_signup))
 }
