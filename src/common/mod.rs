@@ -41,12 +41,14 @@ pub struct Index {
 pub struct Entry {
     pub key: Key,
     pub value: String,
+    pub last_uuid: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Params {
     pub parties: String,
     pub threshold: String,
+    pub signer_id: String,
 }
 
 #[allow(dead_code)]
@@ -118,6 +120,7 @@ pub fn broadcast(
     let entry = Entry {
         key: key.clone(),
         value: data,
+        last_uuid: sender_uuid,
     };
 
     let res_body = postb(&addr, &client, "set", entry).unwrap();
@@ -138,6 +141,7 @@ pub fn sendp2p(
     let entry = Entry {
         key: key.clone(),
         value: data,
+        last_uuid: sender_uuid,
     };
 
     let res_body = postb(&addr, &client, "set", entry).unwrap();
@@ -164,9 +168,19 @@ pub fn poll_for_broadcasts(
                 let res_body = postb(&addr, &client, "get", index.clone()).unwrap();
                 let answer: Result<Entry, ()> = serde_json::from_str(&res_body).unwrap();
                 if let Ok(answer) = answer {
-                    ans_vec.push(answer.value);
-                    println!("[{:?}] party {:?} => party {:?}", round, i, party_num);
-                    break;
+                    let last_uuid: String = answer.last_uuid;
+                    if last_uuid != sender_uuid {
+                        panic!("NEW_UUID found, restart signer...");
+                    }
+                    if answer.key == "last_uuid" {
+                        if last_uuid != sender_uuid {
+                            panic!("NEW_UUID found, restart signer...");
+                        }
+                    } else {
+                        ans_vec.push(answer.value);
+                        println!("[{:?}] party {:?} => party {:?}", round, i, party_num);
+                        break;
+                    }
                 }
             }
         }
@@ -194,9 +208,15 @@ pub fn poll_for_p2p(
                 let res_body = postb(&addr, &client, "get", index.clone()).unwrap();
                 let answer: Result<Entry, ()> = serde_json::from_str(&res_body).unwrap();
                 if let Ok(answer) = answer {
-                    ans_vec.push(answer.value);
-                    println!("[{:?}] party {:?} => party {:?}", round, i, party_num);
-                    break;
+                    let last_uuid: String = answer.last_uuid;
+                    if last_uuid != sender_uuid {
+                        panic!("NEW_UUID found, restart signer...");
+                    }
+                    if answer.key != "last_uuid" {
+                        ans_vec.push(answer.value);
+                        println!("[{:?}] party {:?} => party {:?}", round, i, party_num);
+                        break;
+                    }
                 }
             }
         }

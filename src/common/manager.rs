@@ -1,5 +1,7 @@
 use std::collections::HashMap;
+use std::env;
 use std::sync::RwLock;
+use std::time::SystemTime;
 
 use rocket::{post, routes, State};
 use rocket_contrib::json::Json;
@@ -55,15 +57,28 @@ fn get(
 ) -> Json<Result<Entry, ()>> {
     let index: Index = request.0;
     let hm = db_mtx.read().unwrap();
+    let last_uuid_opt = hm.get("last_uuid");
+    let mut last_uuid: String = "".to_string();
+    if last_uuid_opt.is_some() {
+        last_uuid = last_uuid_opt.unwrap().to_string();
+    }
     match hm.get(&index.key) {
         Some(v) => {
             let entry = Entry {
                 key: index.key,
                 value: v.clone().to_string(),
+                last_uuid: last_uuid,
             };
             Json(Ok(entry))
         }
-        None => Json(Err(())),
+        None => {
+            let entry = Entry {
+                key: "last_uuid".to_string(),
+                value: "".to_string(),
+                last_uuid: last_uuid,
+            };
+            Json(Ok(entry))
+        }
     }
 }
 
@@ -82,9 +97,9 @@ fn signup_keygen(
 ) -> Json<Result<PartySignup, ()>> {
     let parties = request.parties.parse::<u16>().unwrap();
     let key = "signup-keygen".to_string();
+    let last_uuid_key = "last_uuid".to_string();
 
     let mut hm = db_mtx.write().unwrap();
-
     let party_signup = {
         let value = hm.get(&key).unwrap();
         let client_signup: PartySignup = serde_json::from_str(&value).unwrap();
@@ -113,6 +128,7 @@ fn signup_keygen(
     } else {
         hm.insert(key, serde_json::to_string(&party_signup).unwrap());
     }
+    hm.insert(last_uuid_key, (&party_signup.uuid).to_string());
     Json(Ok(party_signup))
 }
 
@@ -122,36 +138,63 @@ fn signup_sign(
     request: Json<Params>,
 ) -> Json<Result<PartySignup, ()>> {
     let threshold = request.threshold.parse::<u16>().unwrap();
+    let signer_id = request.signer_id.to_string();
     let key = "signup-sign".to_string();
-
+    let last_uuid_key = "last_uuid".to_string();
     let mut hm = db_mtx.write().unwrap();
+    let value = hm.get(&key).unwrap();
+    let client_signup: PartySignup = serde_json::from_str(&value).unwrap();
+    let mut clear: &str = "-----";
 
+    let kind: &str;
     let party_signup = {
-        let value = hm.get(&key).unwrap();
-        let client_signup: PartySignup = serde_json::from_str(&value).unwrap();
         if client_signup.number < threshold + 1 {
+            kind = "join";
             PartySignup {
                 number: client_signup.number + 1,
                 uuid: client_signup.uuid,
             }
         } else {
+            kind = "new ";
             PartySignup {
                 number: 1,
                 uuid: Uuid::new_v4().to_string(),
             }
         }
     };
-    if party_signup.number == threshold + 1 {
-        hm.insert(
-            key,
-            serde_json::to_string(&PartySignup {
-                number: 0,
-                uuid: Uuid::new_v4().to_string(),
-            })
+
+    if party_signup.number == 1 {
+        clear = "clear 1";
+        hm.clear()
+    };
+
+    println!(
+        "[{:?}] {} Signup: {} - {} | No {} | {} | {}",
+        SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
             .unwrap(),
-        );
-    } else {
-        hm.insert(key, serde_json::to_string(&party_signup).unwrap());
-    }
+        env::var("ROCKET_PORT").unwrap().as_str(),
+        signer_id,
+        party_signup.number,
+        party_signup.uuid,
+        kind,
+        clear
+    );
+
+    // if party_signup.number == threshold + 1 {
+    //     hm.insert(
+    //         key,
+    //         serde_json::to_string(&PartySignup {
+    //             number: 0,
+    //             uuid: Uuid::new_v4().to_string(),
+    //         })
+    //         .unwrap(),
+    //     );
+    // } else {
+    //     hm.insert(key, serde_json::to_string(&party_signup).unwrap());
+    // }
+
+    hm.insert(key, serde_json::to_string(&party_signup).unwrap());
+    hm.insert(last_uuid_key, (&party_signup.uuid).to_string());
     Json(Ok(party_signup))
 }
