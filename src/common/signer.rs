@@ -142,7 +142,7 @@ pub fn sign(
 
     //////////////////////////////////////////////////////////////////////////////
     let (com, decommit) = sign_keys.phase1_broadcast();
-    let m_a_k = MessageA::a(&sign_keys.k_i, &party_keys.ek, &[]);
+    let (m_a_k, _) = MessageA::a(&sign_keys.k_i, &party_keys.ek, &[]);
     assert!(broadcast(
         &addr,
         &client,
@@ -400,7 +400,12 @@ pub fn sign(
         &client,
         party_num_int.clone(),
         "round6",
-        serde_json::to_string(&(phase_5a_decom.clone(), helgamal_proof.clone())).unwrap(),
+        serde_json::to_string(&(
+            phase_5a_decom.clone(),
+            helgamal_proof.clone(),
+            dlog_proof_rho.clone()
+        ))
+        .unwrap(),
         uuid.clone(),
     )
     .is_ok());

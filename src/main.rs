@@ -176,7 +176,7 @@ fn main() {
         ("keygen", Some(sub_matches)) => {
             let addr = sub_matches
                 .value_of("manager_addr")
-                .unwrap_or("http://127.0.0.1:8000")
+                .unwrap_or("http://127.0.0.1:8001")
                 .to_string();
             let keysfile_path = sub_matches.value_of("keysfile").unwrap_or("").to_string();
 
