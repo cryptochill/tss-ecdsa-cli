@@ -28,7 +28,7 @@ clap = { version = "2.33", features = ["yaml"] }
 [dependencies.multi-party-ecdsa]
 git = "https://github.com/Hrezaei/multi-party-ecdsa"
 #tag = "v0.3.0"
-branch = "feature/upgrade-crypto"
+branch = "feature/deprecate-rust-crypto"
 
 [patch.crates-io]
 rust-gmp = { version = "0.5.1", features = ["serde_support"], git = "https://github.com/KZen-networks/rust-gmp" }
