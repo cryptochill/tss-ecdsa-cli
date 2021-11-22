@@ -11,9 +11,13 @@ use curv::cryptographic_primitives::proofs::sigma_correct_homomorphic_elgamal_en
 use curv::cryptographic_primitives::proofs::sigma_dlog::DLogProof;
 use curv::cryptographic_primitives::secret_sharing::feldman_vss::VerifiableSS;
 use curv::elliptic::curves::traits::*;
-use curv::{BigInt, FE, GE};
-use multi_party_ecdsa::protocols::multi_party_ecdsa::gg_2018::mta::*;
+use curv::{
+    BigInt,
+    elliptic::curves::secp256_k1::{FE, GE},
+    arithmetic::{BasicOps, Converter, Modulo}
+};
 use multi_party_ecdsa::protocols::multi_party_ecdsa::gg_2018::party_i::*;
+use multi_party_ecdsa::utilities::mta::*;
 use paillier::*;
 use reqwest::blocking::Client;
 use serde::{Deserialize, Serialize};
@@ -34,7 +38,7 @@ pub fn sign(
     party_keys: Keys,
     shared_keys: SharedKeys,
     party_id: u16,
-    vss_scheme_vec: &mut Vec<VerifiableSS>,
+    vss_scheme_vec: &mut Vec<VerifiableSS<GE>>,
     paillier_key_vector: Vec<EncryptionKey>,
     y_sum: &GE,
     params: &Params,
@@ -138,7 +142,7 @@ pub fn sign(
 
     //////////////////////////////////////////////////////////////////////////////
     let (com, decommit) = sign_keys.phase1_broadcast();
-    let m_a_k = MessageA::a(&sign_keys.k_i, &party_keys.ek);
+    let m_a_k = MessageA::a(&sign_keys.k_i, &party_keys.ek, &[]);
     assert!(broadcast(
         &addr,
         &client,
@@ -187,16 +191,20 @@ pub fn sign(
     let mut j = 0;
     for i in 1..THRESHOLD + 2 {
         if i != party_num_int {
-            let (m_b_gamma, beta_gamma) = MessageB::b(
+            let (m_b_gamma, beta_gamma, _, _) = MessageB::b(
                 &sign_keys.gamma_i,
                 &paillier_key_vector[signers_vec[(i - 1) as usize]],
                 m_a_vec[j].clone(),
-            );
-            let (m_b_w, beta_wi) = MessageB::b(
+                &[]
+            )
+            .unwrap();
+            let (m_b_w, beta_wi, _, _) = MessageB::b(
                 &sign_keys.w_i,
                 &paillier_key_vector[signers_vec[(i - 1) as usize]],
                 m_a_vec[j].clone(),
-            );
+                &[]
+            )
+            .unwrap();
             m_b_gamma_send_vec.push(m_b_gamma);
             m_b_w_send_vec.push(m_b_w);
             beta_vec.push(beta_gamma);
@@ -263,8 +271,8 @@ pub fn sign(
             let alpha_ij_wi = m_b
                 .verify_proofs_get_alpha(&party_keys.dk, &sign_keys.k_i)
                 .expect("wrong dlog or m_b");
-            alpha_vec.push(alpha_ij_gamma);
-            miu_vec.push(alpha_ij_wi);
+            alpha_vec.push(alpha_ij_gamma.0);
+            miu_vec.push(alpha_ij_wi.0);
             let g_w_i = Keys::update_commitments_to_xi(
                 &xi_com_vec[signers_vec[(i - 1) as usize]],
                 &vss_scheme_vec[signers_vec[(i - 1) as usize]],
@@ -340,7 +348,7 @@ pub fn sign(
     bc1_vec.remove((party_num_int - 1) as usize);
     let b_proof_vec = (0..m_b_gamma_rec_vec.len())
         .map(|i| &m_b_gamma_rec_vec[i].b_proof)
-        .collect::<Vec<&DLogProof>>();
+        .collect::<Vec<&DLogProof<GE>>>();
     let R = SignKeys::phase4(&delta_inv, &b_proof_vec, decommit_vec, &bc1_vec)
         .expect("bad gamma_i decommit");
 
@@ -348,15 +356,15 @@ pub fn sign(
     let R = R + decomm_i.g_gamma_i * &delta_inv;
 
     // we assume the message is already hashed (by the signer).
-    let message_bn = BigInt::from(message);
+    let message_bn = BigInt::from_bytes(message);
     //    println!("message_bn INT: {}", message_bn);
-    let message_int = BigInt::from(message);
+    let message_int = BigInt::from_bytes(message);
     let two = BigInt::from(2);
     let message_bn = message_bn.modulus(&two.pow(256));
     let local_sig =
         LocalSignature::phase5_local_sig(&sign_keys.k_i, &message_bn, &R, &sigma, &y_sum);
 
-    let (phase5_com, phase_5a_decom, helgamal_proof) = local_sig.phase5a_broadcast_5b_zkproof();
+    let (phase5_com, phase_5a_decom, helgamal_proof, dlog_proof_rho) = local_sig.phase5a_broadcast_5b_zkproof();
 
     //phase (5A)  broadcast commit
     assert!(broadcast(
@@ -406,27 +414,39 @@ pub fn sign(
         uuid.clone(),
     );
 
-    let mut decommit5a_and_elgamal_vec: Vec<(Phase5ADecom1, HomoELGamalProof)> = Vec::new();
+    let mut decommit5a_and_elgamal_and_dlog_vec: Vec<(
+        Phase5ADecom1,
+        HomoELGamalProof<GE>,
+        DLogProof<GE>,
+    )> = Vec::new();
     format_vec_from_reads(
         &round6_ans_vec,
-        party_num_int.clone() as usize,
-        (phase_5a_decom.clone(), helgamal_proof.clone()),
-        &mut decommit5a_and_elgamal_vec,
+        party_num_int as usize,
+        (
+            phase_5a_decom.clone(),
+            helgamal_proof.clone(),
+            dlog_proof_rho.clone(),
+        ),
+        &mut decommit5a_and_elgamal_and_dlog_vec,
     );
-    let decommit5a_and_elgamal_vec_includes_i = decommit5a_and_elgamal_vec.clone();
-    decommit5a_and_elgamal_vec.remove((party_num_int - 1) as usize);
+    let decommit5a_and_elgamal_vec_includes_i = decommit5a_and_elgamal_and_dlog_vec.clone();
+    decommit5a_and_elgamal_and_dlog_vec.remove((party_num_int - 1) as usize);
     commit5a_vec.remove((party_num_int - 1) as usize);
     let phase_5a_decomm_vec = (0..THRESHOLD)
-        .map(|i| decommit5a_and_elgamal_vec[i as usize].0.clone())
+        .map(|i| decommit5a_and_elgamal_and_dlog_vec[i as usize].0.clone())
         .collect::<Vec<Phase5ADecom1>>();
     let phase_5a_elgamal_vec = (0..THRESHOLD)
-        .map(|i| decommit5a_and_elgamal_vec[i as usize].1.clone())
-        .collect::<Vec<HomoELGamalProof>>();
+        .map(|i| decommit5a_and_elgamal_and_dlog_vec[i as usize].1.clone())
+        .collect::<Vec<HomoELGamalProof<GE>>>();
+    let phase_5a_dlog_vec = (0..THRESHOLD)
+        .map(|i| decommit5a_and_elgamal_and_dlog_vec[i as usize].2.clone())
+        .collect::<Vec<DLogProof<GE>>>();
     let (phase5_com2, phase_5d_decom2) = local_sig
         .phase5c(
             &phase_5a_decomm_vec,
             &commit5a_vec,
             &phase_5a_elgamal_vec,
+            &phase_5a_dlog_vec,
             &phase_5a_decom.V_i,
             &R.clone(),
         )
@@ -548,8 +568,8 @@ pub fn sign(
     //    print(sig.recid.clone()
 
     let ret_dict = json!({
-        "r": (BigInt::from(&(sig.r.get_element())[..])).to_str_radix(16),
-        "s": (BigInt::from(&(sig.s.get_element())[..])).to_str_radix(16),
+        "r": (BigInt::from_bytes(&(sig.r.get_element())[..])).to_str_radix(16),
+        "s": (BigInt::from_bytes(&(sig.s.get_element())[..])).to_str_radix(16),
         "status": "signature_ready",
         "recid": sig.recid.clone(),
         "x": &y_sum.x_coor(),

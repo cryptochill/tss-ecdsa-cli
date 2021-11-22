@@ -2,12 +2,14 @@ use std::collections::HashMap;
 use std::sync::RwLock;
 
 use rocket::{post, routes, State};
-use rocket_contrib::json::Json;
+use rocket::serde::json::Json;
+
 use uuid::Uuid;
 
 use crate::common::{Entry, Index, Key, Params, PartySignup};
 
-pub fn run_manager() {
+#[rocket::main]
+pub async fn run_manager() -> Result<(), rocket::Error> {
     //     let mut my_config = Config::development();
     //     my_config.set_port(18001);
     let db: HashMap<Key, String> = HashMap::new();
@@ -42,15 +44,16 @@ pub fn run_manager() {
         hm.insert(sign_key, serde_json::to_string(&party_signup_sign).unwrap());
     }
     /////////////////////////////////////////////////////////////////
-    rocket::ignite()
+    rocket::build()
         .mount("/", routes![get, set, signup_keygen, signup_sign])
         .manage(db_mtx)
-        .launch();
+        .launch()
+        .await
 }
 
 #[post("/get", format = "json", data = "<request>")]
 fn get(
-    db_mtx: State<RwLock<HashMap<Key, String>>>,
+    db_mtx: &State<RwLock<HashMap<Key, String>>>,
     request: Json<Index>,
 ) -> Json<Result<Entry, ()>> {
     let index: Index = request.0;
@@ -68,7 +71,7 @@ fn get(
 }
 
 #[post("/set", format = "json", data = "<request>")]
-fn set(db_mtx: State<RwLock<HashMap<Key, String>>>, request: Json<Entry>) -> Json<Result<(), ()>> {
+fn set(db_mtx: &State<RwLock<HashMap<Key, String>>>, request: Json<Entry>) -> Json<Result<(), ()>> {
     let entry: Entry = request.0;
     let mut hm = db_mtx.write().unwrap();
     hm.insert(entry.key.clone(), entry.value.clone());
@@ -77,7 +80,7 @@ fn set(db_mtx: State<RwLock<HashMap<Key, String>>>, request: Json<Entry>) -> Jso
 
 #[post("/signupkeygen", format = "json", data = "<request>")]
 fn signup_keygen(
-    db_mtx: State<RwLock<HashMap<Key, String>>>,
+    db_mtx: &State<RwLock<HashMap<Key, String>>>,
     request: Json<Params>,
 ) -> Json<Result<PartySignup, ()>> {
     let parties = request.parties.parse::<u16>().unwrap();
@@ -118,7 +121,7 @@ fn signup_keygen(
 
 #[post("/signupsign", format = "json", data = "<request>")]
 fn signup_sign(
-    db_mtx: State<RwLock<HashMap<Key, String>>>,
+    db_mtx: &State<RwLock<HashMap<Key, String>>>,
     request: Json<Params>,
 ) -> Json<Result<PartySignup, ()>> {
     let threshold = request.threshold.parse::<u16>().unwrap();

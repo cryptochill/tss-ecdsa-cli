@@ -14,7 +14,12 @@ use std::fs;
 use clap::{App, AppSettings, Arg, SubCommand};
 use curv::cryptographic_primitives::secret_sharing::feldman_vss::VerifiableSS;
 use curv::elliptic::curves::traits::*;
-use curv::{BigInt, GE};
+
+use curv::{
+    BigInt,
+    elliptic::curves::secp256_k1::{GE},
+    arithmetic::Converter
+};
 use multi_party_ecdsa::protocols::multi_party_ecdsa::gg_2018::party_i::*;
 use paillier::*;
 use serde_json::json;
@@ -99,7 +104,7 @@ fn main() {
                 Keys,
                 SharedKeys,
                 u16,
-                Vec<VerifiableSS>,
+                Vec<VerifiableSS<GE>>,
                 Vec<EncryptionKey>,
                 GE,
             ) = serde_json::from_str(&data).unwrap();
@@ -111,7 +116,7 @@ fn main() {
                 false => {
                     let path_vector: Vec<BigInt> = path
                         .split('/')
-                        .map(|s| s.trim().parse::<BigInt>().unwrap())
+                        .map(|s| BigInt::from_bytes(s.trim().as_bytes()))
                         .collect();
                     let (y_sum_child, f_l_new) = hd_keys::get_hd_key(&y_sum, path_vector.clone());
                     (f_l_new, y_sum_child.clone())
@@ -165,11 +170,13 @@ fn main() {
                 )
             }
         }
-        ("manager", Some(_matches)) => manager::run_manager(),
+        ("manager", Some(_matches)) => {
+            manager::run_manager();
+        }
         ("keygen", Some(sub_matches)) => {
             let addr = sub_matches
                 .value_of("manager_addr")
-                .unwrap_or("http://127.0.0.1:8001")
+                .unwrap_or("http://127.0.0.1:8000")
                 .to_string();
             let keysfile_path = sub_matches.value_of("keysfile").unwrap_or("").to_string();
 

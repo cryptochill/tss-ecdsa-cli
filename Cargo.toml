@@ -11,32 +11,27 @@ name = "tss_cli"
 path = "src/main.rs"
 
 [dependencies]
-rocket = { version = "0.4.2", default-features = false, features = ["tls"] }
-rocket_contrib = { version = "0.4.2" }
+rocket = { version = "0.5.0-rc.1", features = ["json"] }
 serde = "1.0"
 serde_json = "1.0"
 serde_derive = "1.0"
 hex = "0.4"
 reqwest = { version = "0.10.1", default-features = false, features = ["native-tls", "json", "blocking"] }
 uuid = { version = "0.8", features = ["v4"] }
-rust-crypto = "0.2"
+aes-gcm = "0.9.4"
 libsecp256k1 = "0.3.2"
-paillier = { git = "https://github.com/KZen-networks/rust-paillier", tag = "v0.3.4"}
-zk-paillier = { git = "https://github.com/KZen-networks/zk-paillier", tag = "v0.2.5"}
+curv = { package = "curv-kzen", version = "0.7", default-features = false }
+paillier = { git = "https://github.com/KZen-networks/rust-paillier", tag = "v0.3.10"}
+zk-paillier = { git = "https://github.com/KZen-networks/zk-paillier", tag = "v0.3.12"}
 clap = { version = "2.33", features = ["yaml"] }
 
 [dependencies.multi-party-ecdsa]
-git = "https://github.com/KZen-networks/multi-party-ecdsa"
-tag = "v0.3.0"
-#branch = "master"
-
-[dependencies.curv]
-git = "https://github.com/KZen-networks/curv"
-tag = "v0.2.3"
-features = ["ec_secp256k1"]
+git = "https://github.com/Hrezaei/multi-party-ecdsa"
+#tag = "v0.3.0"
+branch = "feature/upgrade-crypto"
 
 [patch.crates-io]
-rust-gmp = { version = "0.5.0", features = ["serde_support"], git = "https://github.com/KZen-networks/rust-gmp" }
+rust-gmp = { version = "0.5.1", features = ["serde_support"], git = "https://github.com/KZen-networks/rust-gmp" }
 
 [profile.release]
 opt-level = 2
