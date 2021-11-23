@@ -2,7 +2,7 @@ language: rust
 
 # pin temporarily because rustfmt is not available in nightly
 rust:
-  - nightly-2020-07-11
+  - nightly-2021-10-04
 
 before_script:
   - rustup component add rustfmt-preview

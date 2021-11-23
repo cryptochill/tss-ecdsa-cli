@@ -5,15 +5,14 @@ pub mod signer;
 
 use std::{iter::repeat, thread, time, time::Duration};
 
-use crypto::{
-    aead::{AeadDecryptor, AeadEncryptor},
-    aes::KeySize::KeySize256,
-    aes_gcm::AesGcm,
-};
+use aes_gcm::{Aes256Gcm, Nonce};
+use aes_gcm::aead::{NewAead, Aead, Payload};
+
 use curv::{
     arithmetic::traits::Converter,
+    elliptic::curves::secp256_k1::{FE, GE},
     elliptic::curves::traits::{ECPoint, ECScalar},
-    BigInt, FE, GE,
+    BigInt,
 };
 use reqwest::blocking::Client;
 use serde::{Deserialize, Serialize};
@@ -52,33 +51,53 @@ pub struct Params {
 }
 
 #[allow(dead_code)]
-pub fn aes_encrypt(key_slice: &[u8], plaintext: &[u8]) -> AEAD {
-    let nonce: Vec<u8> = repeat(3).take(12).collect();
-    let aad: [u8; 0] = [];
-    let mut key = [0; 32];
-    key[(32 - key_slice.len())..].copy_from_slice(key_slice);
+pub fn aes_encrypt(key: &[u8], plaintext: &[u8]) -> AEAD {
 
-    let mut gcm = AesGcm::new(KeySize256, &key, &nonce[..], &aad);
-    let mut out: Vec<u8> = repeat(0).take(plaintext.len()).collect();
-    let mut out_tag: Vec<u8> = repeat(0).take(16).collect();
-    gcm.encrypt(&plaintext[..], &mut out[..], &mut out_tag[..]);
+    let mut full_length_key:[u8; 32] = [0; 32];
+    full_length_key[(32 - key.len())..].copy_from_slice(key);//Pad key with zeros
+
+    let aes_key = aes_gcm::Key::from_slice(full_length_key.as_slice());
+    let cipher = Aes256Gcm::new(aes_key);
+
+    let nonce_vector: Vec<u8> = repeat(3).take(12).collect();
+    let nonce = Nonce::from_slice(nonce_vector.as_slice());
+
+    let out_tag: Vec<u8> = repeat(0).take(16).collect();
+
+    let text_payload = Payload {
+        msg: plaintext,
+        aad: &out_tag.as_slice()
+    };
+
+    let ciphertext = cipher.encrypt(nonce, text_payload)
+        .expect("encryption failure!"); // NOTE: handle this error to avoid panics!
+
     AEAD {
-        ciphertext: out.to_vec(),
+        ciphertext: ciphertext,
         tag: out_tag.to_vec(),
     }
 }
 
 #[allow(dead_code)]
-pub fn aes_decrypt(key_slice: &[u8], aead_pack: AEAD) -> Vec<u8> {
-    let mut out: Vec<u8> = repeat(0).take(aead_pack.ciphertext.len()).collect();
-    let nonce: Vec<u8> = repeat(3).take(12).collect();
-    let aad: [u8; 0] = [];
-    let mut key = [0; 32];
-    key[(32 - key_slice.len())..].copy_from_slice(key_slice);
+pub fn aes_decrypt(key: &[u8], aead_pack: AEAD) -> Vec<u8> {
 
-    let mut gcm = AesGcm::new(KeySize256, &key, &nonce[..], &aad);
-    gcm.decrypt(&aead_pack.ciphertext[..], &mut out, &aead_pack.tag[..]);
-    out
+    let mut full_length_key:[u8; 32] = [0; 32];
+    full_length_key[(32 - key.len())..].copy_from_slice(key);//Pad key with zeros
+
+    let aes_key = aes_gcm::Key::from_slice(full_length_key.as_slice());
+
+    let nonce_vector: Vec<u8> = repeat(3).take(12).collect();
+    let nonce = Nonce::from_slice(nonce_vector.as_slice());
+
+    let gcm = Aes256Gcm::new(aes_key);
+
+    let text_payload = Payload {
+        msg: aead_pack.ciphertext.as_slice(),
+        aad: aead_pack.tag.as_slice()
+    };
+
+    let out = gcm.decrypt(nonce, text_payload);
+    out.unwrap_or_default()
 }
 
 pub fn postb<T>(addr: &String, client: &Client, path: &str, body: T) -> Option<String>
@@ -228,7 +247,7 @@ pub fn poll_for_p2p(
 pub fn check_sig(r: &FE, s: &FE, msg: &BigInt, pk: &GE) {
     use secp256k1::{verify, Message, PublicKey, PublicKeyFormat, Signature};
 
-    let raw_msg = BigInt::to_vec(&msg);
+    let raw_msg = BigInt::to_bytes(&msg);
     let mut msg: Vec<u8> = Vec::new(); // padding
     msg.extend(vec![0u8; 32 - raw_msg.len()]);
     msg.extend(raw_msg.iter());
