@@ -9,24 +9,16 @@ extern crate paillier;
 extern crate reqwest;
 extern crate serde_json;
 
-use std::fs;
-
 use clap::{App, AppSettings, Arg, SubCommand};
-use curv::cryptographic_primitives::secret_sharing::feldman_vss::VerifiableSS;
-use curv::elliptic::curves::traits::*;
 
-use curv::{
-    BigInt,
-    elliptic::curves::secp256_k1::{GE},
-    arithmetic::Converter
-};
-use multi_party_ecdsa::protocols::multi_party_ecdsa::gg_2018::party_i::*;
-use paillier::*;
-use serde_json::json;
-
-use common::{hd_keys, keygen, manager, signer, Params};
+use common::{manager};
 
 mod common;
+mod curves;
+mod test;
+
+use curves::ecdsa;
+use curves::eddsa;
 
 fn main() {
     let matches = App::new("TSS CLI Utility")
@@ -51,7 +43,12 @@ fn main() {
                     .short("a")
                     .long("addr")
                     .takes_value(true)
-                    .help("URL to manager. E.g. http://127.0.0.2:8002")),
+                    .help("URL to manager. E.g. http://127.0.0.2:8002"))
+                .arg(Arg::with_name("curve")
+                    .short("c")
+                    .long("curve")
+                    .takes_value(true)
+                    .help("Either ecdsa (default) or eddsa")),
             SubCommand::with_name("pubkey").about("Get X,Y of a pub key")
                 .arg(Arg::with_name("keysfile")
                     .required(true)
@@ -62,7 +59,12 @@ fn main() {
                     .short("p")
                     .long("path")
                     .takes_value(true)
-                    .help("Derivation path (Optional)")),
+                    .help("Derivation path (Optional)"))
+                .arg(Arg::with_name("curve")
+                    .short("c")
+                    .long("curve")
+                    .takes_value(true)
+                    .help("Either ecdsa (default) or eddsa")),
             SubCommand::with_name("sign").about("Run signer")
                 .arg(Arg::with_name("keysfile")
                     .required(true)
@@ -89,89 +91,44 @@ fn main() {
                     .long("addr")
                     .takes_value(true)
                     .help("URL to manager"))
+                .arg(Arg::with_name("curve")
+                    .short("c")
+                    .long("curve")
+                    .takes_value(true)
+                    .help("Either ecdsa (default) or eddsa")),
         ])
         .get_matches();
 
     match matches.subcommand() {
         ("pubkey", Some(sub_matches)) | ("sign", Some(sub_matches)) => {
             let keysfile_path = sub_matches.value_of("keysfile").unwrap_or("");
-
-            // Read data from keys file
-            let data = fs::read_to_string(keysfile_path).expect(
-                format!("Unable to load keys file at location: {}", keysfile_path).as_str(),
-            );
-            let (party_keys, shared_keys, party_id, mut vss_scheme_vec, paillier_key_vector, y_sum): (
-                Keys,
-                SharedKeys,
-                u16,
-                Vec<VerifiableSS<GE>>,
-                Vec<EncryptionKey>,
-                GE,
-            ) = serde_json::from_str(&data).unwrap();
-
-            // Get root pub key or HD pub key at specified path
             let path = sub_matches.value_of("path").unwrap_or("");
-            let (f_l_new, y_sum) = match path.is_empty() {
-                true => (ECScalar::zero(), y_sum),
-                false => {
-                    let path_vector: Vec<BigInt> = path
-                        .split('/')
-                        .map(|s| BigInt::from_bytes(s.trim().as_bytes()))
-                        .collect();
-                    let (y_sum_child, f_l_new) = hd_keys::get_hd_key(&y_sum, path_vector.clone());
-                    (f_l_new, y_sum_child.clone())
+            let message_str = sub_matches.value_of("message").unwrap_or("");
+            let curve = sub_matches.value_of("curve").unwrap_or("ecdsa");
+            let manager_addr = sub_matches
+                .value_of("manager_addr")
+                .unwrap_or("http://127.0.0.1:8001")
+                .to_string();
+            // Parse threshold params
+            let params: Vec<&str> = sub_matches
+                .value_of("params")
+                .unwrap_or("")
+                .split("/")
+                .collect();
+            let action = matches.subcommand_name().unwrap();
+            let result = match curve {
+                "ecdsa" => ecdsa::run_pubkey_or_sign(action, keysfile_path, path, message_str, manager_addr, params),
+                "eddsa" => match action {
+                    "sign" => eddsa::sign(manager_addr, keysfile_path.to_string(), params, message_str.to_string()),
+                    "pubkey" => eddsa::hd_keys::run_pubkey(keysfile_path, path),
+                    _ => serde_json::Value::String("".to_string())
                 }
+                _ => serde_json::Value::String("".to_string())
             };
-
-            // Return pub key as x,y
-            if let Some(_sub_matches) = matches.subcommand_matches("pubkey") {
-                let ret_dict = json!({
-                    "x": &y_sum.x_coor(),
-                    "y": &y_sum.y_coor(),
-                    "path": path,
-                });
-                println!("{}", ret_dict.to_string());
-            } else if let Some(sub_matches) = matches.subcommand_matches("sign") {
-                // Parse message to sign
-                let message_str = sub_matches.value_of("message").unwrap_or("");
-                let message = match hex::decode(message_str.clone()) {
-                    Ok(x) => x,
-                    Err(_e) => message_str.as_bytes().to_vec(),
-                };
-                let message = &message[..];
-                let manager_addr = sub_matches
-                    .value_of("manager_addr")
-                    .unwrap_or("http://127.0.0.1:8001")
-                    .to_string();
-
-                // Parse threshold params
-                let params: Vec<&str> = sub_matches
-                    .value_of("params")
-                    .unwrap_or("")
-                    .split("/")
-                    .collect();
-                //            println!("sign me {:?} / {:?} / {:?}", manager_addr, message, params);
-                let params = Params {
-                    threshold: params[0].to_string(),
-                    parties: params[1].to_string(),
-                };
-                signer::sign(
-                    manager_addr,
-                    party_keys,
-                    shared_keys,
-                    party_id,
-                    &mut vss_scheme_vec,
-                    paillier_key_vector,
-                    &y_sum,
-                    &params,
-                    &message,
-                    &f_l_new,
-                    !path.is_empty(),
-                )
-            }
+            println!("{}", result.to_string());
         }
         ("manager", Some(_matches)) => {
-            manager::run_manager();
+            let _ = manager::run_manager();
         }
         ("keygen", Some(sub_matches)) => {
             let addr = sub_matches
@@ -179,14 +136,20 @@ fn main() {
                 .unwrap_or("http://127.0.0.1:8001")
                 .to_string();
             let keysfile_path = sub_matches.value_of("keysfile").unwrap_or("").to_string();
-
+            let curve = sub_matches.value_of("curve").unwrap_or("ecdsa");
             let params: Vec<&str> = sub_matches
                 .value_of("params")
                 .unwrap_or("")
                 .split("/")
                 .collect();
-            keygen::run_keygen(&addr, &keysfile_path, &params);
+            match curve {
+                "ecdsa" => ecdsa::keygen::run_keygen(&addr, &keysfile_path, &params),
+                "eddsa" => eddsa::keygen::run_keygen(&addr, &keysfile_path, &params),
+                _ => {}
+            }
+
         }
         _ => {}
     }
 }
+

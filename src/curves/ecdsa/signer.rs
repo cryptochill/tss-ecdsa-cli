@@ -19,11 +19,12 @@ use curv::{
 use multi_party_ecdsa::protocols::multi_party_ecdsa::gg_2018::party_i::*;
 use multi_party_ecdsa::utilities::mta::*;
 use paillier::*;
-use reqwest::blocking::Client;
 use serde::{Deserialize, Serialize};
-use serde_json::json;
+use serde_json::{json, Value};
 
-use crate::common::{broadcast, poll_for_broadcasts, poll_for_p2p, sendp2p, Params, PartySignup};
+use crate::common::{
+    broadcast, poll_for_broadcasts, poll_for_p2p, sendp2p,
+    Params, PartySignup, signup, Client};
 
 #[derive(Hash, PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
 pub struct TupleKey {
@@ -45,13 +46,14 @@ pub fn sign(
     message: &[u8],
     f_l_new: &FE,
     sign_at_path: bool,
-) {
-    let client = Client::new();
+) -> Value {
+    let client = Client::new(addr.clone());
     let delay = time::Duration::from_millis(25);
     let THRESHOLD = params.threshold.parse::<u16>().unwrap();
 
     // Signup
-    let (party_num_int, uuid) = match signup(&addr, &client, &params).unwrap() {
+    let session_name = "signupsign-ecdsa".to_string();
+    let (party_num_int, uuid) = match signup(session_name, &client, &params).unwrap() {
         PartySignup { number, uuid } => (number, uuid),
     };
 
@@ -60,7 +62,6 @@ pub fn sign(
 
     // round 0: collect signers IDs
     assert!(broadcast(
-        &addr,
         &client,
         party_num_int,
         "round0",
@@ -70,7 +71,6 @@ pub fn sign(
     .is_ok());
 
     let round0_ans_vec = poll_for_broadcasts(
-        &addr,
         &client,
         party_num_int,
         THRESHOLD + 1,
@@ -144,7 +144,6 @@ pub fn sign(
     let (com, decommit) = sign_keys.phase1_broadcast();
     let (m_a_k, _) = MessageA::a(&sign_keys.k_i, &party_keys.ek, &[]);
     assert!(broadcast(
-        &addr,
         &client,
         party_num_int,
         "round1",
@@ -153,7 +152,6 @@ pub fn sign(
     )
     .is_ok());
     let round1_ans_vec = poll_for_broadcasts(
-        &addr,
         &client,
         party_num_int,
         THRESHOLD + 1,
@@ -217,7 +215,6 @@ pub fn sign(
     for i in 1..THRESHOLD + 2 {
         if i != party_num_int {
             assert!(sendp2p(
-                &addr,
                 &client,
                 party_num_int.clone(),
                 i.clone(),
@@ -232,7 +229,6 @@ pub fn sign(
     }
 
     let round2_ans_vec = poll_for_p2p(
-        &addr,
         &client,
         party_num_int,
         THRESHOLD + 1,
@@ -290,7 +286,6 @@ pub fn sign(
     let sigma = sign_keys.phase2_sigma_i(&miu_vec, &ni_vec);
 
     assert!(broadcast(
-        &addr,
         &client,
         party_num_int,
         "round3",
@@ -299,7 +294,6 @@ pub fn sign(
     )
     .is_ok());
     let round3_ans_vec = poll_for_broadcasts(
-        &addr,
         &client,
         party_num_int,
         THRESHOLD + 1,
@@ -319,7 +313,6 @@ pub fn sign(
     //////////////////////////////////////////////////////////////////////////////
     // decommit to gamma_i
     assert!(broadcast(
-        &addr,
         &client,
         party_num_int,
         "round4",
@@ -328,7 +321,6 @@ pub fn sign(
     )
     .is_ok());
     let round4_ans_vec = poll_for_broadcasts(
-        &addr,
         &client,
         party_num_int,
         THRESHOLD + 1,
@@ -368,7 +360,6 @@ pub fn sign(
 
     //phase (5A)  broadcast commit
     assert!(broadcast(
-        &addr,
         &client,
         party_num_int.clone(),
         "round5",
@@ -377,7 +368,6 @@ pub fn sign(
     )
     .is_ok());
     let round5_ans_vec = poll_for_broadcasts(
-        &addr,
         &client,
         party_num_int.clone(),
         THRESHOLD + 1,
@@ -396,7 +386,6 @@ pub fn sign(
 
     //phase (5B)  broadcast decommit and (5B) ZK proof
     assert!(broadcast(
-        &addr,
         &client,
         party_num_int.clone(),
         "round6",
@@ -410,7 +399,6 @@ pub fn sign(
     )
     .is_ok());
     let round6_ans_vec = poll_for_broadcasts(
-        &addr,
         &client,
         party_num_int.clone(),
         THRESHOLD + 1,
@@ -459,7 +447,6 @@ pub fn sign(
 
     //////////////////////////////////////////////////////////////////////////////
     assert!(broadcast(
-        &addr,
         &client,
         party_num_int.clone(),
         "round7",
@@ -468,7 +455,6 @@ pub fn sign(
     )
     .is_ok());
     let round7_ans_vec = poll_for_broadcasts(
-        &addr,
         &client,
         party_num_int.clone(),
         THRESHOLD + 1,
@@ -487,7 +473,6 @@ pub fn sign(
 
     //phase (5B)  broadcast decommit and (5B) ZK proof
     assert!(broadcast(
-        &addr,
         &client,
         party_num_int.clone(),
         "round8",
@@ -496,7 +481,6 @@ pub fn sign(
     )
     .is_ok());
     let round8_ans_vec = poll_for_broadcasts(
-        &addr,
         &client,
         party_num_int.clone(),
         THRESHOLD + 1,
@@ -526,7 +510,6 @@ pub fn sign(
 
     //////////////////////////////////////////////////////////////////////////////
     assert!(broadcast(
-        &addr,
         &client,
         party_num_int.clone(),
         "round9",
@@ -535,7 +518,6 @@ pub fn sign(
     )
     .is_ok());
     let round9_ans_vec = poll_for_broadcasts(
-        &addr,
         &client,
         party_num_int.clone(),
         THRESHOLD + 1,
@@ -581,7 +563,8 @@ pub fn sign(
         "y": &y_sum.y_coor(),
         "msg_int": message_int,
     });
-    println!("{}", ret_dict.to_string());
+
+    ret_dict
 
     //    fs::write("signature".to_string(), sign_json).expect("Unable to save !");
 
@@ -611,20 +594,15 @@ fn format_vec_from_reads<'a, T: serde::Deserialize<'a> + Clone>(
         }
     }
 }
-
+/*
 pub fn postb<T>(addr: &String, client: &Client, path: &str, body: T) -> Option<String>
 where
     T: serde::ser::Serialize,
 {
-    let res = client
+    let res = client.client
         .post(&format!("{}/{}", addr, path))
         .json(&body)
         .send();
     Some(res.unwrap().text().unwrap())
 }
-
-pub fn signup(addr: &String, client: &Client, params: &Params) -> Result<PartySignup, ()> {
-    let res_body = postb(&addr, &client, "signupsign", params).unwrap();
-    let answer: Result<PartySignup, ()> = serde_json::from_str(&res_body).unwrap();
-    return answer;
-}
+*/

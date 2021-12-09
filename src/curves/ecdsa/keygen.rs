@@ -13,18 +13,18 @@ use multi_party_ecdsa::protocols::multi_party_ecdsa::gg_2018::party_i::{
     KeyGenBroadcastMessage1, KeyGenDecommitMessage1, Keys, Parameters,
 };
 use paillier::EncryptionKey;
-use reqwest::blocking::Client;
 
 use crate::common::{
-    aes_decrypt, aes_encrypt, broadcast, poll_for_broadcasts, poll_for_p2p, postb, sendp2p, Params,
-    PartySignup, AEAD,
+    aes_decrypt, aes_encrypt, broadcast, poll_for_broadcasts,
+    poll_for_p2p, sendp2p, Params, PartySignup, AEAD,
+    signup, Client
 };
 
 pub fn run_keygen(addr: &String, keysfile_path: &String, params: &Vec<&str>) {
     let THRESHOLD: u16 = params[0].parse::<u16>().unwrap();
     let PARTIES: u16 = params[1].parse::<u16>().unwrap();
 
-    let client = Client::new();
+    let client = Client::new(addr.to_string());
 
     // delay:
     let delay = time::Duration::from_millis(25);
@@ -38,17 +38,18 @@ pub fn run_keygen(addr: &String, keysfile_path: &String, params: &Vec<&str>) {
         threshold: THRESHOLD.to_string(),
         parties: PARTIES.to_string(),
     };
-    let (party_num_int, uuid) = match keygen_signup(&addr, &client, &tn_params).unwrap() {
+
+    let session_name = "signupkeygen-ecdsa".to_string();
+    let (party_num_int, uuid) = match signup(session_name, &client, &tn_params).unwrap() {
         PartySignup { number, uuid } => (number, uuid),
     };
-    println!("number: {:?}, uuid: {:?}", party_num_int, uuid);
+    println!("number: {:?}, uuid: {:?}, curve: ECDSA", party_num_int, uuid);
 
     let party_keys = Keys::create(party_num_int as usize);
     let (bc_i, decom_i) = party_keys.phase1_broadcast_phase3_proof_of_correct_key();
 
     // send commitment to ephemeral public keys, get round 1 commitments of other parties
     assert!(broadcast(
-        &addr,
         &client,
         party_num_int,
         "round1",
@@ -57,7 +58,6 @@ pub fn run_keygen(addr: &String, keysfile_path: &String, params: &Vec<&str>) {
     )
     .is_ok());
     let round1_ans_vec = poll_for_broadcasts(
-        &addr,
         &client,
         party_num_int,
         PARTIES,
@@ -75,7 +75,6 @@ pub fn run_keygen(addr: &String, keysfile_path: &String, params: &Vec<&str>) {
 
     // send ephemeral public keys and check commitments correctness
     assert!(broadcast(
-        &addr,
         &client,
         party_num_int,
         "round2",
@@ -84,7 +83,6 @@ pub fn run_keygen(addr: &String, keysfile_path: &String, params: &Vec<&str>) {
     )
     .is_ok());
     let round2_ans_vec = poll_for_broadcasts(
-        &addr,
         &client,
         party_num_int,
         PARTIES,
@@ -129,7 +127,6 @@ pub fn run_keygen(addr: &String, keysfile_path: &String, params: &Vec<&str>) {
             let plaintext = BigInt::to_bytes(&secret_shares[k].to_big_int());
             let aead_pack_i = aes_encrypt(&key_i, &plaintext);
             assert!(sendp2p(
-                &addr,
                 &client,
                 party_num_int,
                 i,
@@ -143,7 +140,6 @@ pub fn run_keygen(addr: &String, keysfile_path: &String, params: &Vec<&str>) {
     }
 
     let round3_ans_vec = poll_for_p2p(
-        &addr,
         &client,
         party_num_int,
         PARTIES,
@@ -171,7 +167,6 @@ pub fn run_keygen(addr: &String, keysfile_path: &String, params: &Vec<&str>) {
 
     // round 4: send vss commitments
     assert!(broadcast(
-        &addr,
         &client,
         party_num_int,
         "round4",
@@ -180,7 +175,6 @@ pub fn run_keygen(addr: &String, keysfile_path: &String, params: &Vec<&str>) {
     )
     .is_ok());
     let round4_ans_vec = poll_for_broadcasts(
-        &addr,
         &client,
         party_num_int,
         PARTIES,
@@ -213,7 +207,6 @@ pub fn run_keygen(addr: &String, keysfile_path: &String, params: &Vec<&str>) {
 
     // round 5: send dlog proof
     assert!(broadcast(
-        &addr,
         &client,
         party_num_int,
         "round5",
@@ -222,7 +215,6 @@ pub fn run_keygen(addr: &String, keysfile_path: &String, params: &Vec<&str>) {
     )
     .is_ok());
     let round5_ans_vec = poll_for_broadcasts(
-        &addr,
         &client,
         party_num_int,
         PARTIES,
@@ -260,9 +252,4 @@ pub fn run_keygen(addr: &String, keysfile_path: &String, params: &Vec<&str>) {
     .unwrap();
     println!("Keys data written to file: {:?}", keysfile_path);
     fs::write(&keysfile_path, keygen_json).expect("Unable to save !");
-}
-
-pub fn keygen_signup(addr: &String, client: &Client, params: &Params) -> Result<PartySignup, ()> {
-    let res_body = postb(&addr, &client, "signupkeygen", params).unwrap();
-    serde_json::from_str(&res_body).unwrap()
 }
