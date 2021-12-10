@@ -119,7 +119,7 @@ fn main() {
             let result = match curve {
                 "ecdsa" => ecdsa::run_pubkey_or_sign(action, keysfile_path, path, message_str, manager_addr, params),
                 "eddsa" => match action {
-                    "sign" => eddsa::sign(manager_addr, keysfile_path.to_string(), params, message_str.to_string()),
+                    "sign" => eddsa::sign(manager_addr, keysfile_path.to_string(), params, message_str.to_string(), path),
                     "pubkey" => eddsa::hd_keys::run_pubkey(keysfile_path, path),
                     _ => serde_json::Value::String("".to_string())
                 }

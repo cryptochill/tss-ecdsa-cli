@@ -14,14 +14,14 @@ use crate::common::{
     AEAD, aes_decrypt, aes_encrypt, AES_KEY_BYTES_LEN, broadcast, Client, Params, PartySignup,
     poll_for_broadcasts, poll_for_p2p, sendp2p, signup
 };
-use crate::eddsa::correct_verifiable_ss;
+use crate::eddsa::{correct_verifiable_ss, hd_keys, CURVE_NAME};
 
 //TODO Find a better approach to import and reuse run_signer() from multi-party-eddsa repo
-pub fn run_signer(manager_address:String, key_file_path: String, params: Params, message_str:String)
-    -> (Signature, GE) {
+pub fn run_signer(manager_address:String, key_file_path: String, params: Params, message_str:String, path: &str)
+                  -> (Signature, GE) {
     // This function is written inspired from the
     // test function: protocols::thresholdsig::test::tests::test_t2_n5_sign_with_4_internal()
-    //TODO Make sure this approach is valid for {t,n} multy party threshold EdDSA
+    //TODO Make sure this approach is valid for {t,n} multi party threshold EdDSA
     let message = match hex::decode(message_str.clone()) {
         Ok(x) => x,
         Err(_e) => message_str.as_bytes().to_vec(),
@@ -56,14 +56,27 @@ pub fn run_signer(manager_address:String, key_file_path: String, params: Params,
 
     Y = Y * eight_invert;
 
+    // Get root pub key or HD pub key at specified path
+    Y = match path.is_empty() {
+        true => Y,
+        false => {
+            let path_vector: Vec<BigInt> = path
+                .split('/')
+                .map(|s| BigInt::from_str_radix(s.trim(), 10).unwrap())
+                .collect();
+            let (y_sum_child, _f_l_new) = hd_keys::get_hd_key(&Y, path_vector.clone());
+            y_sum_child.clone()
+        }
+    };
+
     let THRESHOLD = params.threshold.parse::<u16>().unwrap();
     let PARTIES = params.parties.parse::<u16>().unwrap();
     //signup:
-    let session_name = "signupsign-eddsa".to_string();
-    let (party_num_int, uuid) = match signup(session_name, &client, &params).unwrap() {
+    let signup_path = "signupsign";
+    let (party_num_int, uuid) = match signup(signup_path, &client, &params, CURVE_NAME.clone()).unwrap() {
         PartySignup { number, uuid } => (number, uuid),
     };
-    println!("number: {:?}, uuid: {:?}, curve: EdDSA", party_num_int, uuid);
+    println!("number: {:?}, uuid: {:?}, curve: {:?}", party_num_int, uuid, CURVE_NAME);
 
     let (_eph_keys_vec, eph_shared_keys_vec, R, eph_vss_vec) = eph_keygen_t_n_parties(
         client.clone(),

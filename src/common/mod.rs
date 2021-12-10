@@ -229,7 +229,7 @@ pub fn poll_for_p2p(
 }
 
 
-pub fn signup(session_name: String, client: &Client, params: &Params) -> Result<PartySignup, ()> {
-    let res_body = postb(&client, session_name.as_str(), params).unwrap();
+pub fn signup(path:&str, client: &Client, params: &Params, curve_name: &str) -> Result<PartySignup, ()> {
+    let res_body = postb(&client, path, (params, curve_name)).unwrap();
     serde_json::from_str(&res_body).unwrap()
 }

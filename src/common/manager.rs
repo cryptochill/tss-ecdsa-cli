@@ -20,28 +20,30 @@ pub async fn run_manager() -> Result<(), rocket::Error> {
     //////////////////////////init signups://////////////////////////
     /////////////////////////////////////////////////////////////////
 
-    let keygen_key = "signup-keygen".to_string();
-    let sign_key = "signup-sign".to_string();
+    for curve_name in ["ECDSA", "EdDSA"] {
+        let keygen_key = "signup-keygen-".to_string() + curve_name;
+        let sign_key = "signup-sign-".to_string() + curve_name;
 
-    let uuid_keygen = Uuid::new_v4().to_string();
-    let uuid_sign = Uuid::new_v4().to_string();
+        let uuid_keygen = Uuid::new_v4().to_string();
+        let uuid_sign = Uuid::new_v4().to_string();
 
-    let party1 = 0;
-    let party_signup_keygen = PartySignup {
-        number: party1,
-        uuid: uuid_keygen,
-    };
-    let party_signup_sign = PartySignup {
-        number: party1,
-        uuid: uuid_sign,
-    };
-    {
-        let mut hm = db_mtx.write().unwrap();
-        hm.insert(
-            keygen_key,
-            serde_json::to_string(&party_signup_keygen).unwrap(),
-        );
-        hm.insert(sign_key, serde_json::to_string(&party_signup_sign).unwrap());
+        let party1 = 0;
+        let party_signup_keygen = PartySignup {
+            number: party1,
+            uuid: uuid_keygen,
+        };
+        let party_signup_sign = PartySignup {
+            number: party1,
+            uuid: uuid_sign,
+        };
+        {
+            let mut hm = db_mtx.write().unwrap();
+            hm.insert(
+                keygen_key,
+                serde_json::to_string(&party_signup_keygen).unwrap(),
+            );
+            hm.insert(sign_key, serde_json::to_string(&party_signup_sign).unwrap());
+        }
     }
     /////////////////////////////////////////////////////////////////
     rocket::build()
@@ -81,10 +83,11 @@ fn set(db_mtx: &State<RwLock<HashMap<Key, String>>>, request: Json<Entry>) -> Js
 #[post("/signupkeygen", format = "json", data = "<request>")]
 fn signup_keygen(
     db_mtx: &State<RwLock<HashMap<Key, String>>>,
-    request: Json<Params>,
+    request: Json<(Params, String)>,
 ) -> Json<Result<PartySignup, ()>> {
-    let parties = request.parties.parse::<u16>().unwrap();
-    let key = "signup-keygen".to_string();
+    let parties = request.0.0.parties.parse::<u16>().unwrap();
+    let curve = &request.0.1.parse::<String>().unwrap();
+    let key = "signup-keygen-".to_string() + curve;
 
     let mut hm = db_mtx.write().unwrap();
 
@@ -122,10 +125,11 @@ fn signup_keygen(
 #[post("/signupsign", format = "json", data = "<request>")]
 fn signup_sign(
     db_mtx: &State<RwLock<HashMap<Key, String>>>,
-    request: Json<Params>,
+    request: Json<(Params, String)>,
 ) -> Json<Result<PartySignup, ()>> {
-    let threshold = request.threshold.parse::<u16>().unwrap();
-    let key = "signup-sign".to_string();
+    let threshold = request.0.0.threshold.parse::<u16>().unwrap();
+    let curve = &request.0.1.parse::<String>().unwrap();
+    let key = "signup-sign-".to_string() + curve;
 
     let mut hm = db_mtx.write().unwrap();
 

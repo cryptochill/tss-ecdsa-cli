@@ -25,6 +25,7 @@ use multi_party_ecdsa::protocols::multi_party_ecdsa::gg_2018::party_i::{
 
 
 //pub type Key = String;
+pub static CURVE_NAME: &str = "ECDSA";
 
 
 #[allow(dead_code)]

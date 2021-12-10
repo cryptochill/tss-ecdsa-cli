@@ -10,14 +10,17 @@ pub mod keygen;
 pub mod signer;
 pub mod hd_keys;
 
-pub fn sign(manager_address:String, key_file_path: String, params: Vec<&str>, message_str:String)
-                  -> Value {
+pub static CURVE_NAME: &str = "EdDSA";
+
+
+pub fn sign(manager_address:String, key_file_path: String, params: Vec<&str>, message_str:String, path: &str)
+            -> Value {
     let params = Params {
         threshold: params[0].to_string(),
         parties: params[1].to_string(),
     };
 
-    let (signature, y_sum) = signer::run_signer(manager_address, key_file_path, params, message_str.clone());
+    let (signature, y_sum) = signer::run_signer(manager_address, key_file_path, params, message_str.clone(), path);
 
     let ret_dict = json!({
         "r": (BigInt::from_bytes(&(signature.R.get_element()).to_bytes())).to_str_radix(16),

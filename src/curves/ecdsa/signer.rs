@@ -25,6 +25,7 @@ use serde_json::{json, Value};
 use crate::common::{
     broadcast, poll_for_broadcasts, poll_for_p2p, sendp2p,
     Params, PartySignup, signup, Client};
+use crate::ecdsa::CURVE_NAME;
 
 #[derive(Hash, PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
 pub struct TupleKey {
@@ -52,12 +53,17 @@ pub fn sign(
     let THRESHOLD = params.threshold.parse::<u16>().unwrap();
 
     // Signup
-    let session_name = "signupsign-ecdsa".to_string();
-    let (party_num_int, uuid) = match signup(session_name, &client, &params).unwrap() {
+    let signup_path = "signupsign";
+    let (party_num_int, uuid) = match signup(signup_path, &client, &params, CURVE_NAME.clone()).unwrap() {
         PartySignup { number, uuid } => (number, uuid),
     };
 
-    let debug = json!({"manager_addr": &addr, "party_num": party_num_int, "uuid": uuid});
+    let debug = json!({
+        "manager_addr": &addr,
+        "party_num": party_num_int,
+        "uuid": uuid,
+        "curve": CURVE_NAME
+    });
     println!("{}", serde_json::to_string_pretty(&debug).unwrap());
 
     // round 0: collect signers IDs

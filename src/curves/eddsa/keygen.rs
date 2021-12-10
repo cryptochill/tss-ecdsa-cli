@@ -12,7 +12,7 @@ use paillier::EncryptionKey;
 use crate::common::{AEAD, aes_decrypt, aes_encrypt, AES_KEY_BYTES_LEN,
                     broadcast, Client, Params, PartySignup, poll_for_broadcasts,
                     poll_for_p2p, sendp2p, signup};
-use crate::eddsa::correct_verifiable_ss;
+use crate::eddsa::{correct_verifiable_ss, CURVE_NAME};
 
 
 pub fn run_keygen(addr: &String, keys_file_path: &String, params: &Vec<&str>) {
@@ -32,11 +32,11 @@ pub fn run_keygen(addr: &String, keys_file_path: &String, params: &Vec<&str>) {
         threshold: THRESHOLD.to_string(),
         parties: PARTIES.to_string(),
     };
-    let session_name = "signupkeygen-eddsa".to_string();
-    let (party_num_int, uuid) = match signup(session_name, &client, &tn_params).unwrap() {
+    let signup_path = "signupkeygen";
+    let (party_num_int, uuid) = match signup(signup_path, &client, &tn_params, CURVE_NAME).unwrap() {
         PartySignup { number, uuid } => (number, uuid),
     };
-    println!("number: {:?}, uuid: {:?}, curve: EdDSA", party_num_int, uuid);
+    println!("number: {:?}, uuid: {:?}, curve: {:?}", party_num_int, uuid, CURVE_NAME);
 
     let party_keys = Keys::phase1_create(party_num_int as usize);
     let (bc_i, decom_i) = party_keys.phase1_broadcast();

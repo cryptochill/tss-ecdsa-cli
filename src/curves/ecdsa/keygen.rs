@@ -19,6 +19,7 @@ use crate::common::{
     poll_for_p2p, sendp2p, Params, PartySignup, AEAD,
     signup, Client
 };
+use crate::ecdsa::CURVE_NAME;
 
 pub fn run_keygen(addr: &String, keysfile_path: &String, params: &Vec<&str>) {
     let THRESHOLD: u16 = params[0].parse::<u16>().unwrap();
@@ -39,11 +40,11 @@ pub fn run_keygen(addr: &String, keysfile_path: &String, params: &Vec<&str>) {
         parties: PARTIES.to_string(),
     };
 
-    let session_name = "signupkeygen-ecdsa".to_string();
-    let (party_num_int, uuid) = match signup(session_name, &client, &tn_params).unwrap() {
+    let signup_path = "signupkeygen";
+    let (party_num_int, uuid) = match signup(signup_path, &client, &tn_params, CURVE_NAME.clone()).unwrap() {
         PartySignup { number, uuid } => (number, uuid),
     };
-    println!("number: {:?}, uuid: {:?}, curve: ECDSA", party_num_int, uuid);
+    println!("number: {:?}, uuid: {:?}, curve: {:?}", party_num_int, uuid, CURVE_NAME);
 
     let party_keys = Keys::create(party_num_int as usize);
     let (bc_i, decom_i) = party_keys.phase1_broadcast_phase3_proof_of_correct_key();
