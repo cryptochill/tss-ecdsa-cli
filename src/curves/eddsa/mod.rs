@@ -9,6 +9,7 @@ use crate::common::Params;
 pub mod keygen;
 pub mod signer;
 pub mod hd_keys;
+mod test;
 
 pub static CURVE_NAME: &str = "EdDSA";
 
