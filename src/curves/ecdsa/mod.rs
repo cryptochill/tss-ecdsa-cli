@@ -1,4 +1,3 @@
-pub mod hd_keys;
 pub mod keygen;
 pub mod signer;
 mod test;
@@ -8,7 +7,7 @@ use serde_json::{json, Value};
 
 use std::fs;
 
-use crate::common::{Params};
+use crate::common::{hd_keys, Params};
 
 //use aes_gcm::aead::{NewAead};
 
@@ -17,10 +16,9 @@ use paillier::EncryptionKey;
 
 use curv::{
     arithmetic::traits::Converter,
-    elliptic::curves::secp256_k1::{FE, GE},
-    elliptic::curves::traits::{ECPoint, ECScalar},
     BigInt,
 };
+use curv::elliptic::curves::{Point, Scalar, Secp256k1};
 use multi_party_ecdsa::protocols::multi_party_ecdsa::gg_2018::party_i::{
     Keys, SharedKeys
 };
@@ -28,30 +26,36 @@ use multi_party_ecdsa::protocols::multi_party_ecdsa::gg_2018::party_i::{
 
 //pub type Key = String;
 pub static CURVE_NAME: &str = "ECDSA";
-
+pub type FE = Scalar<Secp256k1>;
+pub type GE = Point<Secp256k1>;
 
 #[allow(dead_code)]
-pub fn check_sig(r: &FE, s: &FE, msg: &BigInt, pk: &GE) {
+pub fn check_sig(
+    r: &Scalar<Secp256k1>,
+    s: &Scalar<Secp256k1>,
+    msg: &BigInt,
+    pk: &Point<Secp256k1>,
+) {
     use secp256k1::{verify, Message, PublicKey, PublicKeyFormat, Signature};
 
-    let raw_msg = BigInt::to_bytes(&msg);
+    let raw_msg = BigInt::to_bytes(msg);
     let mut msg: Vec<u8> = Vec::new(); // padding
     msg.extend(vec![0u8; 32 - raw_msg.len()]);
     msg.extend(raw_msg.iter());
 
     let msg = Message::parse_slice(msg.as_slice()).unwrap();
-    let mut raw_pk = pk.pk_to_key_slice();
+    let mut raw_pk = pk.to_bytes(false).to_vec();
     if raw_pk.len() == 64 {
         raw_pk.insert(0, 4u8);
     }
     let pk = PublicKey::parse_slice(&raw_pk, Some(PublicKeyFormat::Full)).unwrap();
 
     let mut compact: Vec<u8> = Vec::new();
-    let bytes_r = &r.get_element()[..];
+    let bytes_r = &r.to_bytes().to_vec();
     compact.extend(vec![0u8; 32 - bytes_r.len()]);
     compact.extend(bytes_r.iter());
 
-    let bytes_s = &s.get_element()[..];
+    let bytes_s = &s.to_bytes().to_vec();
     compact.extend(vec![0u8; 32 - bytes_s.len()]);
     compact.extend(bytes_s.iter());
 
@@ -72,14 +76,14 @@ pub fn run_pubkey_or_sign(action:&str, keysfile_path:&str, path:&str, message_st
         Keys,
         SharedKeys,
         u16,
-        Vec<VerifiableSS<GE>>,
+        Vec<VerifiableSS<Secp256k1>>,
         Vec<EncryptionKey>,
         GE,
     ) = serde_json::from_str(&data).unwrap();
 
     // Get root pub key or HD pub key at specified path
     let (f_l_new, y_sum) = match path.is_empty() {
-        true => (ECScalar::zero(), y_sum),
+        true => (Scalar::<Secp256k1>::zero(), y_sum),
         false => {
             let path_vector: Vec<BigInt> = path
                 .split('/')
@@ -93,8 +97,8 @@ pub fn run_pubkey_or_sign(action:&str, keysfile_path:&str, path:&str, message_st
     // Return pub key as x,y
     let result = if action == "pubkey" {
         let ret_dict = json!({
-                    "x": &y_sum.x_coor(),
-                    "y": &y_sum.y_coor(),
+                    "x": &y_sum.x_coord().unwrap().to_str_radix(16),
+                    "y": &y_sum.y_coord().unwrap().to_str_radix(16),
                     "path": path,
                 });
         ret_dict

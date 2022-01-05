@@ -1,12 +1,15 @@
 pub mod manager;
+pub mod hd_keys;
 
-use std::{iter::repeat, thread, time, time::Duration};
+use std::{thread, time, time::Duration};
 
 use aes_gcm::{Aes256Gcm, Nonce};
-use aes_gcm::aead::{NewAead, Aead, Payload};
+use aes_gcm::aead::{Aead, NewAead};
 
 use reqwest::blocking::Client as RequestClient;
 use serde::{Deserialize, Serialize};
+use rand::{rngs::OsRng, RngCore};
+
 
 pub type Key = String;
 
@@ -59,52 +62,31 @@ impl Client {
 
 #[allow(dead_code)]
 pub fn aes_encrypt(key: &[u8], plaintext: &[u8]) -> AEAD {
-
-    let mut full_length_key:[u8; 32] = [0; 32];
-    full_length_key[(32 - key.len())..].copy_from_slice(key);//Pad key with zeros
-
-    let aes_key = aes_gcm::Key::from_slice(full_length_key.as_slice());
+    let aes_key = aes_gcm::Key::from_slice(key);
     let cipher = Aes256Gcm::new(aes_key);
 
-    let nonce_vector: Vec<u8> = repeat(3).take(12).collect();
-    let nonce = Nonce::from_slice(nonce_vector.as_slice());
+    let mut nonce = [0u8; 12];
+    OsRng.fill_bytes(&mut nonce);
+    let nonce = Nonce::from_slice(&nonce);
 
-    let out_tag: Vec<u8> = repeat(0).take(16).collect();
-
-    let text_payload = Payload {
-        msg: plaintext,
-        aad: &out_tag.as_slice()
-    };
-
-    let ciphertext = cipher.encrypt(nonce, text_payload)
-        .expect("encryption failure!"); // NOTE: handle this error to avoid panics!
+    let ciphertext = cipher
+        .encrypt(nonce, plaintext)
+        .expect("encryption failure!");
 
     AEAD {
         ciphertext: ciphertext,
-        tag: out_tag.to_vec(),
+        tag: nonce.to_vec(),
     }
 }
 
 #[allow(dead_code)]
 pub fn aes_decrypt(key: &[u8], aead_pack: AEAD) -> Vec<u8> {
-
-    let mut full_length_key:[u8; 32] = [0; 32];
-    full_length_key[(32 - key.len())..].copy_from_slice(key);//Pad key with zeros
-
-    let aes_key = aes_gcm::Key::from_slice(full_length_key.as_slice());
-
-    let nonce_vector: Vec<u8> = repeat(3).take(12).collect();
-    let nonce = Nonce::from_slice(nonce_vector.as_slice());
-
+    let aes_key = aes_gcm::Key::from_slice(key);
+    let nonce = Nonce::from_slice(&aead_pack.tag);
     let gcm = Aes256Gcm::new(aes_key);
 
-    let text_payload = Payload {
-        msg: aead_pack.ciphertext.as_slice(),
-        aad: aead_pack.tag.as_slice()
-    };
-
-    let out = gcm.decrypt(nonce, text_payload);
-    out.unwrap_or_default()
+    let out = gcm.decrypt(nonce, aead_pack.ciphertext.as_slice());
+    out.unwrap()
 }
 
 pub fn postb<T>(client: &Client, path: &str, body: T) -> Option<String>

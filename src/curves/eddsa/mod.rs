@@ -1,14 +1,16 @@
+use std::fs;
 use curv::arithmetic::Converter;
 use curv::BigInt;
 use curv::cryptographic_primitives::secret_sharing::feldman_vss::VerifiableSS;
-use curv::elliptic::curves::ed25519::{Ed25519Scalar, GE};
-use curv::elliptic::curves::traits::{ECScalar, ECPoint};
+use curv::elliptic::curves::{Ed25519, Scalar};
+use multi_party_eddsa::protocols::{FE, GE};
+use multi_party_eddsa::protocols::thresholdsig::{Keys, SharedKeys};
 use serde_json::{json, Value};
 use crate::common::Params;
+use crate::hd_keys;
 
 pub mod keygen;
 pub mod signer;
-pub mod hd_keys;
 mod test;
 
 pub static CURVE_NAME: &str = "EdDSA";
@@ -24,33 +26,52 @@ pub fn sign(manager_address:String, key_file_path: String, params: Vec<&str>, me
     let (signature, y_sum) = signer::run_signer(manager_address, key_file_path, params, message_str.clone(), path);
 
     let ret_dict = json!({
-        "r": (BigInt::from_bytes(&(signature.R.get_element()).to_bytes())).to_str_radix(16),
-        "s": (BigInt::from_bytes(&(signature.sigma.get_element()).to_bytes())).to_str_radix(16),
+        "r": (BigInt::from_bytes(&(signature.R.to_bytes(false)))).to_str_radix(16),
+        "s": (BigInt::from_bytes(&(signature.s.to_bytes()))).to_str_radix(16),
         "status": "signature_ready",
-        //TODO Implement recid
-        //"recid": signature.recid.clone(),
-        "x": &y_sum.x_coor(),
-        "y": &y_sum.y_coor(),
+        "x": &y_sum.x_coord(),
+        "y": &y_sum.y_coord(),
         "msg_int": message_str.as_bytes().to_vec().as_slice(),
     });
+
+    //fs::write("signature.json".to_string(), ret_dict.clone().to_string()).expect("Unable to save !");
 
     ret_dict
 }
 
-pub fn correct_verifiable_ss(vss: VerifiableSS<GE>) -> VerifiableSS<GE> {
-    //Since curv v0.7 does multiply GE's with 8 in deserialization, we have to correct them here:
-    //See https://github.com/ZenGo-X/curv/issues/156#issuecomment-987657279
-    let eight: Ed25519Scalar = ECScalar::from(&BigInt::from(8));
-    let eight_invert = eight.invert();
 
-    let corrected_commitments = vss.commitments.iter()
-        .map(|g| g * &eight_invert)
-        .collect();
+pub fn run_pubkey(keys_file_path:&str, path:&str) -> Value {
 
-    let corrected_vss = VerifiableSS {
-        parameters: vss.parameters,
-        commitments: corrected_commitments,
+    // Read data from keys file
+    let data = fs::read_to_string(keys_file_path).expect(
+        format!("Unable to load keys file at location: {}", keys_file_path).as_str(),
+    );
+    let (_party_keys, _shared_keys, _party_id, _vss_scheme_vec, y_sum): (
+        Keys,
+        SharedKeys,
+        u16,
+        Vec<VerifiableSS<Ed25519>>,
+        GE,
+    ) = serde_json::from_str(&data).unwrap();
+
+    // Get root pub key or HD pub key at specified path
+    let (_f_l_new, y_sum): (FE, GE) = match path.is_empty() {
+        true => (Scalar::<Ed25519>::zero(), y_sum),
+        false => {
+            let path_vector: Vec<BigInt> = path
+                .split('/')
+                .map(|s| BigInt::from_str_radix(s.trim(), 10).unwrap())
+                .collect();
+            let (y_sum_child, f_l_new) = hd_keys::get_hd_key(&y_sum, path_vector.clone());
+            (f_l_new, y_sum_child.clone())
+        }
     };
 
-    corrected_vss
+    // Return pub key as x,y
+    let ret_dict = json!({
+                "x": &y_sum.x_coord().unwrap().to_str_radix(16),
+                "y": &y_sum.y_coord().unwrap().to_str_radix(16),
+                "path": path,
+            });
+    ret_dict
 }

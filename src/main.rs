@@ -1,5 +1,4 @@
 #![allow(non_snake_case)]
-#![feature(proc_macro_hygiene, decl_macro)]
 
 extern crate clap;
 extern crate curv;
@@ -19,6 +18,7 @@ mod test;
 
 use curves::ecdsa;
 use curves::eddsa;
+use crate::common::hd_keys;
 
 fn main() {
     let matches = App::new("TSS CLI Utility")
@@ -86,16 +86,16 @@ fn main() {
                     .long("path")
                     .takes_value(true)
                     .help("Derivation path"))
-                .arg(Arg::with_name("manager_addr")
-                    .short("a")
-                    .long("addr")
-                    .takes_value(true)
-                    .help("URL to manager"))
                 .arg(Arg::with_name("curve")
                     .short("c")
                     .long("curve")
                     .takes_value(true)
-                    .help("Either ecdsa (default) or eddsa")),
+                    .help("Either ecdsa (default) or eddsa"))
+                .arg(Arg::with_name("manager_addr")
+                    .short("a")
+                    .long("addr")
+                    .takes_value(true)
+                    .help("URL to manager")),
         ])
         .get_matches();
 
@@ -120,7 +120,7 @@ fn main() {
                 "ecdsa" => ecdsa::run_pubkey_or_sign(action, keysfile_path, path, message_str, manager_addr, params),
                 "eddsa" => match action {
                     "sign" => eddsa::sign(manager_addr, keysfile_path.to_string(), params, message_str.to_string(), path),
-                    "pubkey" => eddsa::hd_keys::run_pubkey(keysfile_path, path),
+                    "pubkey" => eddsa::run_pubkey(keysfile_path, path),
                     _ => serde_json::Value::String("".to_string())
                 }
                 _ => serde_json::Value::String("".to_string())

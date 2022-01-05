@@ -1,27 +1,26 @@
 use std::{fs, time};
+use std::ops::{Add};
 use std::time::Duration;
-use curv::arithmetic::Converter;
+use curv::arithmetic::{Converter};
 use curv::BigInt;
 use curv::cryptographic_primitives::secret_sharing::feldman_vss::VerifiableSS;
-use curv::elliptic::curves::ed25519::{Ed25519Scalar, FE, GE};
-use curv::elliptic::curves::traits::{ECPoint, ECScalar};
+use curv::elliptic::curves::{Ed25519, Point, Scalar};
+use multi_party_eddsa::protocols::{ExpendedKeyPair, ExpendedPrivateKey, Signature, thresholdsig};
 use multi_party_eddsa::protocols::thresholdsig::{
     EphemeralKey, EphemeralSharedKeys, KeyGenBroadcastMessage1, Keys, LocalSig, Parameters,
-    SharedKeys, Signature
+    SharedKeys
 };
-use paillier::EncryptionKey;
-use crate::common::{
-    AEAD, aes_decrypt, aes_encrypt, AES_KEY_BYTES_LEN, broadcast, Client, Params, PartySignup,
-    poll_for_broadcasts, poll_for_p2p, sendp2p, signup
-};
-use crate::eddsa::{correct_verifiable_ss, hd_keys, CURVE_NAME};
+use crate::common::{AEAD, aes_decrypt, aes_encrypt, AES_KEY_BYTES_LEN, broadcast, Client, hd_keys, Params, PartySignup, poll_for_broadcasts, poll_for_p2p, sendp2p, signup};
+use crate::eddsa::{CURVE_NAME};
+
+type GE = Point<Ed25519>;
+type FE = Scalar<Ed25519>;
 
 //TODO Find a better approach to import and reuse run_signer() from multi-party-eddsa repo
 pub fn run_signer(manager_address:String, key_file_path: String, params: Params, message_str:String, path: &str)
                   -> (Signature, GE) {
     // This function is written inspired from the
     // test function: protocols::thresholdsig::test::tests::test_t2_n5_sign_with_4_internal()
-    //TODO Make sure this approach is valid for {t,n} multi party threshold EdDSA
     let message = match hex::decode(message_str.clone()) {
         Ok(x) => x,
         Err(_e) => message_str.as_bytes().to_vec(),
@@ -33,39 +32,25 @@ pub fn run_signer(manager_address:String, key_file_path: String, params: Params,
 
     let data = fs::read_to_string(key_file_path)
         .expect("Unable to load keys, did you run keygen first? ");
-    let (mut party_keys, mut shared_keys, _, mut vss_scheme_vec, _, mut Y): (
+    let (mut party_keys, mut shared_keys, _, mut vss_scheme_vec, Y): (
         Keys,
         SharedKeys,
         u16,
-        Vec<VerifiableSS<GE>>,
-        Vec<EncryptionKey>,
+        Vec<VerifiableSS<Ed25519>>,
         GE,
     ) = serde_json::from_str(&data).unwrap();
 
-    //Since curv v0.7 does multiply GE's with 8 in deserialization, we have to correct them here:
-    //See https://github.com/ZenGo-X/curv/issues/156#issuecomment-987657279
-    let eight: Ed25519Scalar = ECScalar::from(&BigInt::from(8));
-    let eight_invert = eight.invert();
-
-    party_keys.y_i = party_keys.y_i * eight_invert;
-    shared_keys.y = shared_keys.y * eight_invert;
-
-    vss_scheme_vec = vss_scheme_vec.iter()
-        .map(|vss| correct_verifiable_ss(vss.clone()))
-        .collect();
-
-    Y = Y * eight_invert;
-
+    let sign_at_path = !path.is_empty();
     // Get root pub key or HD pub key at specified path
-    Y = match path.is_empty() {
-        true => Y,
+    let (Y, f_l_new) = match path.is_empty() {
+        true => (Y, FE::zero()),
         false => {
             let path_vector: Vec<BigInt> = path
                 .split('/')
                 .map(|s| BigInt::from_str_radix(s.trim(), 10).unwrap())
                 .collect();
-            let (y_sum_child, _f_l_new) = hd_keys::get_hd_key(&Y, path_vector.clone());
-            y_sum_child.clone()
+            let (y_sum_child, f_l_new) = hd_keys::get_hd_key(&Y, path_vector.clone());
+            (y_sum_child.clone(), f_l_new)
         }
     };
 
@@ -78,12 +63,54 @@ pub fn run_signer(manager_address:String, key_file_path: String, params: Params,
     };
     println!("number: {:?}, uuid: {:?}, curve: {:?}", party_num_int, uuid, CURVE_NAME);
 
+    if sign_at_path == true {
+        // optimize!
+        let g: GE = Point::<Ed25519>::generator().to_point();
+        // apply on first commitment for leader (leader is party with num=1)
+        let com_zero_new = vss_scheme_vec[0].commitments[0].clone() + g * f_l_new.clone();
+        // println!("old zero: {:?}, new zero: {:?}", vss_scheme_vec[0].commitments[0], com_zero_new);
+        // get iterator of all commitments and skip first zero commitment
+        let mut com_iter_unchanged = vss_scheme_vec[0].commitments.iter();
+        com_iter_unchanged.next().unwrap();
+        // iterate commitments and inject changed commitments in the beginning then aggregate into vector
+        let com_vec_new = (0..vss_scheme_vec[1].commitments.len())
+            .map(|i| {
+                if i == 0 {
+                    com_zero_new.clone()
+                } else {
+                    com_iter_unchanged.next().unwrap().clone()
+                }
+            })
+            .collect::<Vec<GE>>();
+        let new_vss = VerifiableSS {
+            parameters: vss_scheme_vec[0].parameters.clone(),
+            commitments: com_vec_new,
+        };
+        // replace old vss_scheme for leader with new one at position 0
+        //    println!("comparing vectors: \n{:?} \nand \n{:?}", vss_scheme_vec[0], new_vss);
+
+        vss_scheme_vec.remove(0);
+        vss_scheme_vec.insert(0, new_vss);
+        //    println!("NEW VSS VECTOR: {:?}", vss_scheme_vec);
+    }
+
+    if sign_at_path == true {
+        if party_num_int == 1 {
+            // update u_i and x_i for leader
+            party_keys = update_party_key(party_keys.clone(), f_l_new.clone());
+            shared_keys = update_shared_key(shared_keys, f_l_new.clone());
+        } else {
+            // only update x_i for non-leaders
+            shared_keys = update_shared_key(shared_keys, f_l_new.clone());
+        }
+    }
+
     let (_eph_keys_vec, eph_shared_keys_vec, R, eph_vss_vec) = eph_keygen_t_n_parties(
         client.clone(),
         uuid.clone(),
         delay,
-        THRESHOLD.clone() as usize,
-        (PARTIES) as usize,
+        THRESHOLD.clone(),
+        PARTIES,
         party_num_int,
         &party_keys,
         &message,
@@ -106,8 +133,8 @@ pub fn run_signer(manager_address:String, key_file_path: String, params: Params,
     );
 
     let parties_index_vec = (0..PARTIES)
-        .map(|i| i as usize)
-        .collect::<Vec<usize>>();
+        .map(|i| i )
+        .collect::<Vec<u16>>();
 
     let verify_local_sig = LocalSig::verify_local_sigs(
         &local_sig_vec,
@@ -122,7 +149,7 @@ pub fn run_signer(manager_address:String, key_file_path: String, params: Params,
 
     // each party / dealer can generate the signature
     let signature =
-        Signature::generate(&vss_sum_local_sigs, &local_sig_vec, &parties_index_vec, R);
+        thresholdsig::generate(&vss_sum_local_sigs, &local_sig_vec, &parties_index_vec, R);
     let verify_sig = signature.verify(&message, &Y);
     assert!(verify_sig.is_ok());
 
@@ -130,12 +157,46 @@ pub fn run_signer(manager_address:String, key_file_path: String, params: Params,
 }
 
 
+pub fn update_party_key(
+    party_keys: Keys,
+    factor_u_i: Scalar<Ed25519>,
+) -> Keys {
+
+    let new_private_key = party_keys.keypair.expended_private_key.private_key.add(factor_u_i);
+
+    Keys {
+        keypair: ExpendedKeyPair {
+            public_key: party_keys.keypair.public_key,
+            expended_private_key: ExpendedPrivateKey {
+                prefix: party_keys.keypair.expended_private_key.prefix,
+                private_key: new_private_key
+            }
+        },
+        party_index: party_keys.party_index
+    }
+}
+
+
+pub fn update_shared_key(
+    shared_keys: SharedKeys,
+    factor_x_i: Scalar<Ed25519>,
+) -> SharedKeys {
+
+    let new_x_i = shared_keys.x_i.add(factor_x_i);
+
+    SharedKeys {
+        y: shared_keys.y,
+        x_i: new_x_i,
+        prefix: shared_keys.prefix
+    }
+}
+
 pub fn eph_keygen_t_n_parties(
     client: Client,
     uuid: String,
     delay: Duration,
-    t: usize, // system threshold
-    n: usize, // number of signers
+    t: u16, // system threshold
+    n: u16, // number of signers
     party_num_int: u16,
     key_i: &Keys,
     message: &[u8],
@@ -143,22 +204,22 @@ pub fn eph_keygen_t_n_parties(
     EphemeralKey,
     Vec<EphemeralSharedKeys>,
     GE,
-    Vec<VerifiableSS<GE>>,
+    Vec<VerifiableSS<Ed25519>>,
 ) {
     let parties = (0..n)
         .map(|i| i + 1)
-        .collect::<Vec<usize>>();
+        .collect::<Vec<u16>>();
 
     let parames = Parameters {
         threshold: t,
         share_count: n.clone(),
     };
-    assert!(parties.len() > t && parties.len() <= n);
+    assert!(parties.len() as u16 > t && parties.len() as u16 <= n);
 
     let eph_party_key: EphemeralKey = EphemeralKey::ephermeral_key_create_from_deterministic_secret(
         key_i,
         message,
-        party_num_int as usize,
+        party_num_int,
     );
 
     let mut bc1_vec = Vec::new();
@@ -185,21 +246,18 @@ pub fn eph_keygen_t_n_parties(
 
     let mut j = 0;
     let mut enc_keys: Vec<Vec<u8>> = Vec::new();
-    let eight: Ed25519Scalar = ECScalar::from(&BigInt::from(8));
-    let eight_invert = eight.invert();
     for i in 1..=n {
-        if i == (party_num_int as usize) {
+        if i == party_num_int {
             bc1_vec.push(bc_i.clone());
             blind_vec.push(blind.clone());
             R_vec.push(eph_party_key.R_i.clone());
         } else {
-            let (bc1_j, blind_j, mut R_i_j) =
+            let (bc1_j, blind_j, R_i_j) =
                 serde_json::from_str::<(KeyGenBroadcastMessage1, BigInt, GE)>(&round1_ans_vec[j]).unwrap();
-            R_i_j = R_i_j * eight_invert;
             bc1_vec.push(bc1_j);
             blind_vec.push(blind_j);
-            R_vec.push(R_i_j);
-            let key_bn: BigInt = (R_i_j.clone() * eph_party_key.r_i).x_coor().unwrap();
+            R_vec.push(R_i_j.clone());
+            let key_bn: BigInt = (R_i_j * eph_party_key.r_i.clone()).x_coord().unwrap();
             let key_bytes = BigInt::to_bytes(&key_bn);
             let mut template: Vec<u8> = vec![0u8; AES_KEY_BYTES_LEN - key_bytes.len()];
             template.extend_from_slice(&key_bytes[..]);
@@ -212,7 +270,7 @@ pub fn eph_keygen_t_n_parties(
     let head = R_vec_iter.next().unwrap();
     let tail = R_vec_iter;
     let R_sum = tail.fold(head.clone(), |acc, x| acc + x);
-    let (vss_scheme, secret_shares, _) = eph_party_key
+    let (vss_scheme, secret_shares) = eph_party_key
         .phase1_verify_com_phase2_distribute(
             &parames, &blind_vec, &R_vec, &bc1_vec, parties.as_slice(),
         )
@@ -237,17 +295,13 @@ pub fn eph_keygen_t_n_parties(
     );
 
     let mut j = 0;
-    let mut vss_scheme_vec: Vec<VerifiableSS<GE>> = Vec::new();
+    let mut vss_scheme_vec: Vec<VerifiableSS<Ed25519>> = Vec::new();
     for i in 1..=n {
-        if i == (party_num_int as usize) {
+        if i == party_num_int {
             vss_scheme_vec.push(vss_scheme.clone());
         } else {
-            let vss_scheme_j: VerifiableSS<GE> = serde_json::from_str(&round2_ans_vec[j]).unwrap();
-
-            //Since curv v0.7 does multiply GE's with 8 in deserialization, we have to correct them here:
-            //See https://github.com/ZenGo-X/curv/issues/156#issuecomment-987657279
-            let corrected_vss_scheme_j = correct_verifiable_ss(vss_scheme_j);
-            vss_scheme_vec.push(corrected_vss_scheme_j);
+            let vss_scheme_j: VerifiableSS<Ed25519> = serde_json::from_str(&round2_ans_vec[j]).unwrap();
+            vss_scheme_vec.push(vss_scheme_j);
             j += 1;
         }
     }
@@ -256,10 +310,10 @@ pub fn eph_keygen_t_n_parties(
     //I'm not sure if we need this phase in ephemeral mode or not?
     let mut j = 0;
     for (k, i) in (1..=n).enumerate() {
-        if i != (party_num_int as usize) {
+        if i != party_num_int {
             // prepare encrypted ss for party i:
             let key_i = &enc_keys[j];
-            let plaintext = BigInt::to_bytes(&secret_shares[k].to_big_int());
+            let plaintext = BigInt::to_bytes(&secret_shares[k].to_bigint());
             let aead_pack_i = aes_encrypt(key_i, &plaintext);
             assert!(sendp2p(
                 &client,
@@ -286,14 +340,14 @@ pub fn eph_keygen_t_n_parties(
     let mut j = 0;
     let mut party_shares: Vec<FE> = Vec::new();
     for i in 1..=n {
-        if i == (party_num_int as usize) {
-            party_shares.push(secret_shares[(i - 1) as usize]);
+        if i == party_num_int {
+            party_shares.push(secret_shares[(i - 1) as usize].clone());
         } else {
             let aead_pack: AEAD = serde_json::from_str(&round3_ans_vec[j]).unwrap();
             let key_i = &enc_keys[j];
             let out = aes_decrypt(key_i, aead_pack);
             let out_bn = BigInt::from_bytes(&out[..]);
-            let out_fe = ECScalar::from(&out_bn);
+            let out_fe = FE::from(&out_bn);
             party_shares.push(out_fe);
             j += 1;
         }
@@ -307,7 +361,7 @@ pub fn eph_keygen_t_n_parties(
             &R_vec,
             &party_shares,
             &vss_scheme_vec,
-            &(party_num_int as usize),
+            party_num_int,
         )
         .expect("invalid vss");
 
@@ -331,11 +385,10 @@ pub fn eph_keygen_t_n_parties(
 
     let mut j = 0;
     for i in 1..=n {
-        if i == (party_num_int as usize) {
+        if i == party_num_int {
             shared_keys_vec.push(eph_shared_key.clone());
         } else {
-            let mut shared_key_j:EphemeralSharedKeys = serde_json::from_str(&round4_ans_vec[j]).unwrap();
-            shared_key_j.R = shared_key_j.R * eight_invert;
+            let shared_key_j:EphemeralSharedKeys = serde_json::from_str(&round4_ans_vec[j]).unwrap();
             shared_keys_vec.push(shared_key_j);
             j += 1;
         }
