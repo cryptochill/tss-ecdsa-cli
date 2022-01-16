@@ -95,13 +95,13 @@ pub fn run_signer(manager_address:String, key_file_path: String, params: Params,
     }
 
     if sign_at_path == true {
-        if party_num_int == 1 {
-            // update u_i and x_i for leader
+
+        let is_leader = party_num_int == 1;
+        shared_keys = update_shared_key(shared_keys, f_l_new.clone(), Y.clone(), is_leader);
+
+        if is_leader {
+            // update party_keys just for leader
             party_keys = update_party_key(party_keys.clone(), f_l_new.clone());
-            shared_keys = update_shared_key(shared_keys, f_l_new.clone());
-        } else {
-            // only update x_i for non-leaders
-            shared_keys = update_shared_key(shared_keys, f_l_new.clone());
         }
     }
 
@@ -180,12 +180,17 @@ pub fn update_party_key(
 pub fn update_shared_key(
     shared_keys: SharedKeys,
     factor_x_i: Scalar<Ed25519>,
+    updated_public_key: Point<Ed25519>,
+    is_leader: bool
 ) -> SharedKeys {
 
-    let new_x_i = shared_keys.x_i.add(factor_x_i);
+    let mut new_x_i = shared_keys.x_i.clone();
+    if is_leader {
+        new_x_i = shared_keys.x_i.add(factor_x_i);
+    }
 
     SharedKeys {
-        y: shared_keys.y,
+        y: updated_public_key,
         x_i: new_x_i,
         prefix: shared_keys.prefix
     }
