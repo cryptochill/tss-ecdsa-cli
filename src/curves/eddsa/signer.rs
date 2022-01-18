@@ -1,15 +1,15 @@
 use std::{fs, time};
-use std::ops::{Add};
 use std::time::Duration;
 use curv::arithmetic::{Converter};
 use curv::BigInt;
 use curv::cryptographic_primitives::secret_sharing::feldman_vss::VerifiableSS;
 use curv::elliptic::curves::{Ed25519, Point, Scalar};
-use multi_party_eddsa::protocols::{ExpendedKeyPair, ExpendedPrivateKey, Signature, thresholdsig};
+use multi_party_eddsa::protocols::{Signature, thresholdsig};
 use multi_party_eddsa::protocols::thresholdsig::{
     EphemeralKey, EphemeralSharedKeys, KeyGenBroadcastMessage1, Keys, LocalSig, Parameters,
     SharedKeys
 };
+use sha2::{Sha512, Digest};
 use crate::common::{AEAD, aes_decrypt, aes_encrypt, AES_KEY_BYTES_LEN, broadcast, Client, hd_keys, Params, PartySignup, poll_for_broadcasts, poll_for_p2p, sendp2p, signup};
 use crate::eddsa::{CURVE_NAME};
 
@@ -32,7 +32,7 @@ pub fn run_signer(manager_address:String, key_file_path: String, params: Params,
 
     let data = fs::read_to_string(key_file_path)
         .expect("Unable to load keys, did you run keygen first? ");
-    let (mut party_keys, mut shared_keys, _, mut vss_scheme_vec, Y): (
+    let (party_keys, mut shared_keys, _, vss_scheme_vec, Y): (
         Keys,
         SharedKeys,
         u16,
@@ -64,45 +64,7 @@ pub fn run_signer(manager_address:String, key_file_path: String, params: Params,
     println!("number: {:?}, uuid: {:?}, curve: {:?}", party_num_int, uuid, CURVE_NAME);
 
     if sign_at_path == true {
-        // optimize!
-        let g: GE = Point::<Ed25519>::generator().to_point();
-        // apply on first commitment for leader (leader is party with num=1)
-        let com_zero_new = vss_scheme_vec[0].commitments[0].clone() + g * f_l_new.clone();
-        // println!("old zero: {:?}, new zero: {:?}", vss_scheme_vec[0].commitments[0], com_zero_new);
-        // get iterator of all commitments and skip first zero commitment
-        let mut com_iter_unchanged = vss_scheme_vec[0].commitments.iter();
-        com_iter_unchanged.next().unwrap();
-        // iterate commitments and inject changed commitments in the beginning then aggregate into vector
-        let com_vec_new = (0..vss_scheme_vec[1].commitments.len())
-            .map(|i| {
-                if i == 0 {
-                    com_zero_new.clone()
-                } else {
-                    com_iter_unchanged.next().unwrap().clone()
-                }
-            })
-            .collect::<Vec<GE>>();
-        let new_vss = VerifiableSS {
-            parameters: vss_scheme_vec[0].parameters.clone(),
-            commitments: com_vec_new,
-        };
-        // replace old vss_scheme for leader with new one at position 0
-        //    println!("comparing vectors: \n{:?} \nand \n{:?}", vss_scheme_vec[0], new_vss);
-
-        vss_scheme_vec.remove(0);
-        vss_scheme_vec.insert(0, new_vss);
-        //    println!("NEW VSS VECTOR: {:?}", vss_scheme_vec);
-    }
-
-    if sign_at_path == true {
-
-        let is_leader = party_num_int == 1;
-        shared_keys = update_shared_key(shared_keys, f_l_new.clone(), Y.clone(), is_leader);
-
-        if is_leader {
-            // update party_keys just for leader
-            party_keys = update_party_key(party_keys.clone(), f_l_new.clone());
-        }
+        shared_keys.y = Y.clone();
     }
 
     let (_eph_keys_vec, eph_shared_keys_vec, R, eph_vss_vec) = eph_keygen_t_n_parties(
@@ -148,53 +110,33 @@ pub fn run_signer(manager_address:String, key_file_path: String, params: Params,
     let vss_sum_local_sigs = verify_local_sig.unwrap();
 
     // each party / dealer can generate the signature
-    let signature =
+    let mut signature =
         thresholdsig::generate(&vss_sum_local_sigs, &local_sig_vec, &parties_index_vec, R);
+
+    if sign_at_path {
+        //This is a tweak made by Elichai Turkel but not recommended by him:
+        update_signature(&mut signature, &Y, &message, f_l_new);
+    }
+
     let verify_sig = signature.verify(&message, &Y);
     assert!(verify_sig.is_ok());
 
     (signature, Y)
 }
 
-
-pub fn update_party_key(
-    party_keys: Keys,
-    factor_u_i: Scalar<Ed25519>,
-) -> Keys {
-
-    let new_private_key = party_keys.keypair.expended_private_key.private_key.add(factor_u_i);
-
-    Keys {
-        keypair: ExpendedKeyPair {
-            public_key: party_keys.keypair.public_key,
-            expended_private_key: ExpendedPrivateKey {
-                prefix: party_keys.keypair.expended_private_key.prefix,
-                private_key: new_private_key
-            }
-        },
-        party_index: party_keys.party_index
-    }
+fn update_signature(signature: &mut Signature, public_key: &Point<Ed25519>, message: &[u8], f_l_new: Scalar<Ed25519>) {
+    let mut k = Sha512::new()
+        .chain(&*signature.R.to_bytes(true))
+        .chain(&*public_key.to_bytes(true))
+        .chain(message)
+        .finalize();
+    // reverse because BigInt uses BigEndian.
+    k.reverse();
+    // This will reduce it mod the group order.
+    let add_to_sigma = Scalar::from_bigint(&BigInt::from_bytes(&k));
+    signature.s = signature.s.clone() + f_l_new * add_to_sigma;
 }
 
-
-pub fn update_shared_key(
-    shared_keys: SharedKeys,
-    factor_x_i: Scalar<Ed25519>,
-    updated_public_key: Point<Ed25519>,
-    is_leader: bool
-) -> SharedKeys {
-
-    let mut new_x_i = shared_keys.x_i.clone();
-    if is_leader {
-        new_x_i = shared_keys.x_i.add(factor_x_i);
-    }
-
-    SharedKeys {
-        y: updated_public_key,
-        x_i: new_x_i,
-        prefix: shared_keys.prefix
-    }
-}
 
 pub fn eph_keygen_t_n_parties(
     client: Client,

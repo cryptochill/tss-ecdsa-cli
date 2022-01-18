@@ -29,8 +29,8 @@ pub fn sign(manager_address:String, key_file_path: String, params: Vec<&str>, me
         "r": (BigInt::from_bytes(&(signature.R.to_bytes(false)))).to_str_radix(16),
         "s": (BigInt::from_bytes(&(signature.s.to_bytes()))).to_str_radix(16),
         "status": "signature_ready",
-        "x": &y_sum.x_coord(),
-        "y": &y_sum.y_coord(),
+        "x": &y_sum.x_coord().unwrap().to_str_radix(16),
+        "y": &y_sum.y_coord().unwrap().to_str_radix(16),
         "msg_int": message_str.as_bytes().to_vec().as_slice(),
     });
 
