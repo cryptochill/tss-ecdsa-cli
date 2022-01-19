@@ -1,6 +1,7 @@
 pub mod keygen;
 pub mod signer;
 mod test;
+pub mod curv7_conversion;
 
 extern crate serde_json;
 use serde_json::{json, Value};
