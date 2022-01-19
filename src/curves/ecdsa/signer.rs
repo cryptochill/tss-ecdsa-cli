@@ -22,9 +22,7 @@ use curv::elliptic::curves::{Point, Secp256k1};
 use paillier::EncryptionKey;
 use sha2::Sha256;
 
-use crate::common::{
-    broadcast, poll_for_broadcasts, poll_for_p2p, sendp2p,
-    Params, PartySignup, signup, Client};
+use crate::common::{Params, Client};
 use crate::ecdsa::{CURVE_NAME, FE, GE};
 
 #[derive(Hash, PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
@@ -48,15 +46,13 @@ pub fn sign(
     f_l_new: &FE,
     sign_at_path: bool,
 ) -> Value {
-    let client = Client::new(addr.clone());
+    let client_purpose = "sign".to_string();
+
     let delay = time::Duration::from_millis(25);
+    let client = Client::new(client_purpose, CURVE_NAME, addr.clone(), delay, (*params).clone());
     let THRESHOLD = params.threshold.parse::<u16>().unwrap();
 
-    // Signup
-    let signup_path = "signupsign";
-    let (party_num_int, uuid) = match signup(signup_path, &client, &params, CURVE_NAME.clone()).unwrap() {
-        PartySignup { number, uuid } => (number, uuid),
-    };
+    let (party_num_int, uuid) = (client.party_number, client.uuid.clone());
 
     let debug = json!({
         "manager_addr": &addr,
@@ -67,22 +63,15 @@ pub fn sign(
     println!("{}", serde_json::to_string_pretty(&debug).unwrap());
 
     // round 0: collect signers IDs
-    assert!(broadcast(
-        &client,
-        party_num_int,
+    assert!(client.broadcast(
         "round0",
         serde_json::to_string(&party_id).unwrap(),
-        uuid.clone(),
     )
     .is_ok());
 
-    let round0_ans_vec = poll_for_broadcasts(
-        &client,
-        party_num_int,
+    let round0_ans_vec = client.poll_for_broadcasts(
         THRESHOLD + 1,
-        delay,
         "round0",
-        uuid.clone(),
     );
     let mut j = 0;
     let mut signers_vec: Vec<u16> = Vec::new();
@@ -149,21 +138,14 @@ pub fn sign(
     //////////////////////////////////////////////////////////////////////////////
     let (com, decommit) = sign_keys.phase1_broadcast();
     let (m_a_k, _) = MessageA::a(&sign_keys.k_i, &party_keys.ek, &[]);
-    assert!(broadcast(
-        &client,
-        party_num_int,
+    assert!(client.broadcast(
         "round1",
         serde_json::to_string(&(com.clone(), m_a_k.clone())).unwrap(),
-        uuid.clone(),
     )
     .is_ok());
-    let round1_ans_vec = poll_for_broadcasts(
-        &client,
-        party_num_int,
+    let round1_ans_vec = client.poll_for_broadcasts(
         THRESHOLD + 1,
-        delay,
         "round1",
-        uuid.clone(),
     );
 
     let mut j = 0;
@@ -220,27 +202,20 @@ pub fn sign(
     let mut j = 0;
     for i in 1..THRESHOLD + 2 {
         if i != party_num_int {
-            assert!(sendp2p(
-                &client,
-                party_num_int.clone(),
+            assert!(client.sendp2p(
                 i.clone(),
                 "round2",
                 serde_json::to_string(&(m_b_gamma_send_vec[j].clone(), m_b_w_send_vec[j].clone()))
                     .unwrap(),
-                uuid.clone(),
             )
             .is_ok());
             j = j + 1;
         }
     }
 
-    let round2_ans_vec = poll_for_p2p(
-        &client,
-        party_num_int,
+    let round2_ans_vec = client.poll_for_p2p(
         THRESHOLD + 1,
-        delay,
         "round2",
-        uuid.clone(),
     );
 
     let mut m_b_gamma_rec_vec: Vec<MessageB> = Vec::new();
@@ -291,21 +266,14 @@ pub fn sign(
     let delta_i = sign_keys.phase2_delta_i(&alpha_vec, &beta_vec);
     let sigma = sign_keys.phase2_sigma_i(&miu_vec, &ni_vec);
 
-    assert!(broadcast(
-        &client,
-        party_num_int,
+    assert!(client.broadcast(
         "round3",
         serde_json::to_string(&delta_i).unwrap(),
-        uuid.clone(),
     )
     .is_ok());
-    let round3_ans_vec = poll_for_broadcasts(
-        &client,
-        party_num_int,
+    let round3_ans_vec = client.poll_for_broadcasts(
         THRESHOLD + 1,
-        delay,
         "round3",
-        uuid.clone(),
     );
     let mut delta_vec: Vec<FE> = Vec::new();
     format_vec_from_reads(
@@ -318,21 +286,14 @@ pub fn sign(
 
     //////////////////////////////////////////////////////////////////////////////
     // decommit to gamma_i
-    assert!(broadcast(
-        &client,
-        party_num_int,
+    assert!(client.broadcast(
         "round4",
         serde_json::to_string(&decommit).unwrap(),
-        uuid.clone(),
     )
     .is_ok());
-    let round4_ans_vec = poll_for_broadcasts(
-        &client,
-        party_num_int,
+    let round4_ans_vec = client.poll_for_broadcasts(
         THRESHOLD + 1,
-        delay,
         "round4",
-        uuid.clone(),
     );
 
     let mut decommit_vec: Vec<SignDecommitPhase1> = Vec::new();
@@ -365,21 +326,14 @@ pub fn sign(
     let (phase5_com, phase_5a_decom, helgamal_proof, dlog_proof_rho) = local_sig.phase5a_broadcast_5b_zkproof();
 
     //phase (5A)  broadcast commit
-    assert!(broadcast(
-        &client,
-        party_num_int.clone(),
+    assert!(client.broadcast(
         "round5",
         serde_json::to_string(&phase5_com).unwrap(),
-        uuid.clone(),
     )
     .is_ok());
-    let round5_ans_vec = poll_for_broadcasts(
-        &client,
-        party_num_int.clone(),
+    let round5_ans_vec = client.poll_for_broadcasts(
         THRESHOLD + 1,
-        delay.clone(),
         "round5",
-        uuid.clone(),
     );
 
     let mut commit5a_vec: Vec<Phase5Com1> = Vec::new();
@@ -391,9 +345,7 @@ pub fn sign(
     );
 
     //phase (5B)  broadcast decommit and (5B) ZK proof
-    assert!(broadcast(
-        &client,
-        party_num_int.clone(),
+    assert!(client.broadcast(
         "round6",
         serde_json::to_string(&(
             phase_5a_decom.clone(),
@@ -401,16 +353,11 @@ pub fn sign(
             dlog_proof_rho.clone()
         ))
         .unwrap(),
-        uuid.clone(),
     )
     .is_ok());
-    let round6_ans_vec = poll_for_broadcasts(
-        &client,
-        party_num_int.clone(),
+    let round6_ans_vec = client.poll_for_broadcasts(
         THRESHOLD + 1,
-        delay.clone(),
         "round6",
-        uuid.clone(),
     );
 
     let mut decommit5a_and_elgamal_and_dlog_vec: Vec<(
@@ -452,21 +399,14 @@ pub fn sign(
         .expect("error phase5");
 
     //////////////////////////////////////////////////////////////////////////////
-    assert!(broadcast(
-        &client,
-        party_num_int.clone(),
+    assert!(client.broadcast(
         "round7",
         serde_json::to_string(&phase5_com2).unwrap(),
-        uuid.clone(),
     )
     .is_ok());
-    let round7_ans_vec = poll_for_broadcasts(
-        &client,
-        party_num_int.clone(),
+    let round7_ans_vec = client.poll_for_broadcasts(
         THRESHOLD + 1,
-        delay.clone(),
         "round7",
-        uuid.clone(),
     );
 
     let mut commit5c_vec: Vec<Phase5Com2> = Vec::new();
@@ -478,21 +418,14 @@ pub fn sign(
     );
 
     //phase (5B)  broadcast decommit and (5B) ZK proof
-    assert!(broadcast(
-        &client,
-        party_num_int.clone(),
+    assert!(client.broadcast(
         "round8",
         serde_json::to_string(&phase_5d_decom2).unwrap(),
-        uuid.clone(),
     )
     .is_ok());
-    let round8_ans_vec = poll_for_broadcasts(
-        &client,
-        party_num_int.clone(),
+    let round8_ans_vec = client.poll_for_broadcasts(
         THRESHOLD + 1,
-        delay.clone(),
         "round8",
-        uuid.clone(),
     );
 
     let mut decommit5d_vec: Vec<Phase5DDecom2> = Vec::new();
@@ -515,21 +448,14 @@ pub fn sign(
         .expect("bad com 5d");
 
     //////////////////////////////////////////////////////////////////////////////
-    assert!(broadcast(
-        &client,
-        party_num_int.clone(),
+    assert!(client.broadcast(
         "round9",
         serde_json::to_string(&s_i).unwrap(),
-        uuid.clone(),
     )
     .is_ok());
-    let round9_ans_vec = poll_for_broadcasts(
-        &client,
-        party_num_int.clone(),
+    let round9_ans_vec = client.poll_for_broadcasts(
         THRESHOLD + 1,
-        delay.clone(),
         "round9",
-        uuid.clone(),
     );
 
     let mut s_i_vec: Vec<FE> = Vec::new();
