@@ -50,7 +50,10 @@ pub fn run_signer(manager_address:String, key_file_path: String, params: Params,
                 .map(|s| BigInt::from_str_radix(s.trim(), 10).unwrap())
                 .collect();
             let (y_sum_child, f_l_new) = hd_keys::get_hd_key(&Y, path_vector.clone());
-            (y_sum_child.clone(), f_l_new)
+
+            let safe_public_key_child = update_hd_derived_public_key(y_sum_child);
+
+            (safe_public_key_child, f_l_new)
         }
     };
 

@@ -7,6 +7,7 @@ use multi_party_eddsa::protocols::{FE, GE};
 use multi_party_eddsa::protocols::thresholdsig::{Keys, SharedKeys};
 use serde_json::{json, Value};
 use crate::common::Params;
+use crate::eddsa::signer::update_hd_derived_public_key;
 use crate::hd_keys;
 
 pub mod keygen;
@@ -63,7 +64,10 @@ pub fn run_pubkey(keys_file_path:&str, path:&str) -> Value {
                 .map(|s| BigInt::from_str_radix(s.trim(), 10).unwrap())
                 .collect();
             let (y_sum_child, f_l_new) = hd_keys::get_hd_key(&y_sum, path_vector.clone());
-            (f_l_new, y_sum_child.clone())
+
+            let safe_public_key_child = update_hd_derived_public_key(y_sum_child);
+
+            (f_l_new, safe_public_key_child)
         }
     };
 
