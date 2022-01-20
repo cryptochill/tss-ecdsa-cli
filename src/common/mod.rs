@@ -194,7 +194,7 @@ impl Client {
         ans_vec
     }
 
-    pub fn exchange_data<T>(&self, n:u16, round: &str, data:T) -> Vec<T>
+    pub fn exchange_data<T>(&self, parties_count:u16, round: &str, data:T) -> Vec<T>
         where
             T: Clone + serde::de::DeserializeOwned + serde::Serialize,
     {
@@ -205,14 +205,14 @@ impl Client {
         )
             .is_ok());
         let round_ans_vec = self.poll_for_broadcasts(
-            n,
+            parties_count,
             &round,
         );
 
         let json_answers = round_ans_vec.clone();
         let mut j = 0;
         let mut answers: Vec<T> = Vec::new();
-        for i in 1..=n {
+        for i in 1..=parties_count {
             if i == party_num {
                 answers.push(data.clone());
             } else {

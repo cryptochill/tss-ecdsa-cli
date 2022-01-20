@@ -3,13 +3,13 @@ use std::{fs, time};
 use curv::{
     arithmetic::traits::Converter,
     cryptographic_primitives::{
-        proofs::sigma_dlog::DLogProof, secret_sharing::feldman_vss::VerifiableSS,
+        proofs::sigma_dlog::DLogProof,
     },
     BigInt,
 };
 use curv::elliptic::curves::{Scalar, Secp256k1};
 use multi_party_ecdsa::protocols::multi_party_ecdsa::gg_2018::party_i::{
-    KeyGenBroadcastMessage1, KeyGenDecommitMessage1, Keys, Parameters,
+    KeyGenDecommitMessage1, Keys, Parameters,
 };
 use paillier::EncryptionKey;
 use sha2::{Sha256};
@@ -45,57 +45,30 @@ pub fn run_keygen(addr: &String, keysfile_path: &String, params: &Vec<&str>) {
     let (bc_i, decom_i) = party_keys.phase1_broadcast_phase3_proof_of_correct_key();
 
     // send commitment to ephemeral public keys, get round 1 commitments of other parties
-    assert!(client.broadcast(
-        "round1",
-        serde_json::to_string(&bc_i).unwrap(),
-    )
-    .is_ok());
-    let round1_ans_vec = client.poll_for_broadcasts(
-        PARTIES,
-        "round1",
-    );
-
-    let mut bc1_vec = round1_ans_vec
-        .iter()
-        .map(|m| serde_json::from_str::<KeyGenBroadcastMessage1>(m).unwrap())
-        .collect::<Vec<_>>();
-
-    bc1_vec.insert(party_num_int as usize - 1, bc_i);
+    let bc1_vector = client.exchange_data(PARTIES, "round1", bc_i);
 
     // send ephemeral public keys and check commitments correctness
-    assert!(client.broadcast(
-        "round2",
-        serde_json::to_string(&decom_i).unwrap(),
-    )
-    .is_ok());
-    let round2_ans_vec = client.poll_for_broadcasts(
-        PARTIES,
-        "round2",
-    );
+    let decommit_vector: Vec<KeyGenDecommitMessage1> = client.exchange_data(PARTIES, "round2", decom_i);
 
-    let mut j = 0;
-    let mut point_vec: Vec<GE> = Vec::new();
-    let mut decom_vec: Vec<KeyGenDecommitMessage1> = Vec::new();
+    let point_vec: Vec<GE> = decommit_vector
+        .iter()
+        .map(|x| x.clone().y_i)
+        .collect();
+
     let mut enc_keys: Vec<BigInt> = Vec::new();
     for i in 1..=PARTIES {
-        if i == party_num_int {
-            point_vec.push(decom_i.clone().y_i);
-            decom_vec.push(decom_i.clone());
-        } else {
-            let decom_j: KeyGenDecommitMessage1 = serde_json::from_str(&round2_ans_vec[j]).unwrap();
-            point_vec.push(decom_j.clone().y_i);
-            decom_vec.push(decom_j.clone());
+        if i != party_num_int {
+            let decom_j = &decommit_vector[(i-1) as usize];
             enc_keys.push((decom_j.clone().y_i * party_keys.clone().u_i).x_coord().unwrap());
-            j = j + 1;
         }
     }
 
     let (head, tail) = point_vec.split_at(1);
-    let y_sum = tail.iter().fold(head[0].clone(), |acc, x| acc + x);
+    let public_key = tail.iter().fold(head[0].clone(), |acc, x| acc + x);
 
     let (vss_scheme, secret_shares, _index) = party_keys
         .phase1_verify_com_phase3_verify_correct_key_phase2_distribute(
-            &params, &decom_vec, &bc1_vec,
+            &params, &decommit_vector, &bc1_vector,
         )
         .expect("invalid key");
 
@@ -141,27 +114,7 @@ pub fn run_keygen(addr: &String, keysfile_path: &String, params: &Vec<&str>) {
     }
 
     // round 4: send vss commitments
-    assert!(client.broadcast(
-        "round4",
-        serde_json::to_string(&vss_scheme).unwrap(),
-    )
-    .is_ok());
-    let round4_ans_vec = client.poll_for_broadcasts(
-        PARTIES,
-        "round4",
-    );
-
-    let mut j = 0;
-    let mut vss_scheme_vec: Vec<VerifiableSS<Secp256k1>> = Vec::new();
-    for i in 1..=PARTIES {
-        if i == party_num_int {
-            vss_scheme_vec.push(vss_scheme.clone());
-        } else {
-            let vss_scheme_j: VerifiableSS<Secp256k1> = serde_json::from_str(&round4_ans_vec[j]).unwrap();
-            vss_scheme_vec.push(vss_scheme_j);
-            j += 1;
-        }
-    }
+    let vss_scheme_vec = client.exchange_data(PARTIES, "round4", vss_scheme);
 
     let (shared_keys, dlog_proof) = party_keys
         .phase2_verify_vss_construct_keypair_phase3_pok_dlog(
@@ -174,32 +127,13 @@ pub fn run_keygen(addr: &String, keysfile_path: &String, params: &Vec<&str>) {
         .expect("invalid vss");
 
     // round 5: send dlog proof
-    assert!(client.broadcast(
-        "round5",
-        serde_json::to_string(&dlog_proof).unwrap(),
-    )
-    .is_ok());
-    let round5_ans_vec = client.poll_for_broadcasts(
-        PARTIES,
-        "round5",
-    );
+    let dlog_proof_vec: Vec<DLogProof<Secp256k1, Sha256>> = client.exchange_data(PARTIES, "round5", dlog_proof);
 
-    let mut j = 0;
-    let mut dlog_proof_vec: Vec<DLogProof<Secp256k1, Sha256>> = Vec::new();
-    for i in 1..=PARTIES {
-        if i == party_num_int {
-            dlog_proof_vec.push(dlog_proof.clone());
-        } else {
-            let dlog_proof_j: DLogProof<Secp256k1, Sha256> = serde_json::from_str(&round5_ans_vec[j]).unwrap();
-            dlog_proof_vec.push(dlog_proof_j);
-            j += 1;
-        }
-    }
     Keys::verify_dlog_proofs(&params, &dlog_proof_vec, &point_vec).expect("bad dlog proof");
 
     //save key to file:
     let paillier_key_vec = (0..PARTIES)
-        .map(|i| bc1_vec[i as usize].e.clone())
+        .map(|i| bc1_vector[i as usize].e.clone())
         .collect::<Vec<EncryptionKey>>();
 
     let keygen_json = serde_json::to_string(&(
@@ -208,7 +142,7 @@ pub fn run_keygen(addr: &String, keysfile_path: &String, params: &Vec<&str>) {
         party_num_int,
         vss_scheme_vec,
         paillier_key_vec,
-        y_sum,
+        public_key,
     ))
     .unwrap();
     println!("Keys data written to file: {:?}", keysfile_path);
