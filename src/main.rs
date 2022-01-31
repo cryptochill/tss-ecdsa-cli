@@ -121,7 +121,7 @@ fn main() {
                 false => {
                     let path_vector: Vec<BigInt> = path
                         .split('/')
-                        .map(|s| BigInt::from_bytes(s.trim().as_bytes()))
+                        .map(|s| BigInt::from_str_radix(s.trim(), 10).unwrap())
                         .collect();
                     let (y_sum_child, f_l_new) = hd_keys::get_hd_key(&y_sum, path_vector.clone());
                     (f_l_new, y_sum_child.clone())
