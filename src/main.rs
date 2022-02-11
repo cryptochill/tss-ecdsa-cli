@@ -20,6 +20,7 @@ use curv::{
     elliptic::curves::secp256_k1::{GE},
     arithmetic::Converter
 };
+use curv::elliptic::curves::secp256_k1::FE;
 use multi_party_ecdsa::protocols::multi_party_ecdsa::gg_2018::party_i::*;
 use paillier::*;
 use serde_json::json;
@@ -27,6 +28,7 @@ use serde_json::json;
 use common::{hd_keys, keygen, manager, signer, Params};
 
 mod common;
+mod test;
 
 fn main() {
     let matches = App::new("TSS CLI Utility")
@@ -118,14 +120,7 @@ fn main() {
             let path = sub_matches.value_of("path").unwrap_or("");
             let (f_l_new, y_sum) = match path.is_empty() {
                 true => (ECScalar::zero(), y_sum),
-                false => {
-                    let path_vector: Vec<BigInt> = path
-                        .split('/')
-                        .map(|s| BigInt::from_bytes(s.trim().as_bytes()))
-                        .collect();
-                    let (y_sum_child, f_l_new) = hd_keys::get_hd_key(&y_sum, path_vector.clone());
-                    (f_l_new, y_sum_child.clone())
-                }
+                false => call_hd_key(path, y_sum)
             };
 
             // Return pub key as x,y
@@ -196,4 +191,15 @@ fn main() {
         }
         _ => {}
     }
+}
+
+fn call_hd_key(path: &str, public_key: GE) -> (FE, GE) {
+
+    let path_vector: Vec<BigInt> = path
+        .split('/')
+        .map(|s| BigInt::from_str_radix(s.trim(), 10).unwrap())
+        .collect();
+    let (public_key_child, f_l_new) = hd_keys::get_hd_key(&public_key, path_vector.clone());
+    (f_l_new, public_key_child.clone())
+
 }
