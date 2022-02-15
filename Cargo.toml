@@ -41,9 +41,6 @@ branch = "master"
 git = "https://github.com/HRezaei/multi-party-eddsa"
 branch = "feature/curv-0.9-examples"
 
-[dev-dependencies]
-glob = "0.3.0"
-
 [patch.crates-io]
 rust-gmp = { version = "0.5.1", features = ["serde_support"], git = "https://github.com/KZen-networks/rust-gmp" }
 

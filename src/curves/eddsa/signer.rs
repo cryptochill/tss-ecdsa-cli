@@ -1,4 +1,5 @@
 use std::{fs, time};
+use std::time::Duration;
 use curv::arithmetic::{Converter};
 use curv::BigInt;
 use curv::cryptographic_primitives::secret_sharing::feldman_vss::VerifiableSS;
@@ -9,7 +10,7 @@ use multi_party_eddsa::protocols::thresholdsig::{
     SharedKeys
 };
 use sha2::{Sha512, Digest};
-use crate::common::{AEAD, aes_decrypt, aes_encrypt, AES_KEY_BYTES_LEN, Client, hd_keys, Params};
+use crate::common::{AEAD, aes_decrypt, aes_encrypt, AES_KEY_BYTES_LEN, broadcast, Client, hd_keys, Params, PartySignup, poll_for_broadcasts, poll_for_p2p, sendp2p, signup};
 use crate::eddsa::{CURVE_NAME};
 
 type GE = Point<Ed25519>;
@@ -25,11 +26,9 @@ pub fn run_signer(manager_address:String, key_file_path: String, params: Params,
         Err(_e) => message_str.as_bytes().to_vec(),
     };
     let message = &message[..];
-    let client_purpose = "sign".to_string();
+    let client = Client::new(manager_address);
     // delay:
     let delay = time::Duration::from_millis(25);
-    let client = Client::new(client_purpose, CURVE_NAME, manager_address, delay, params.clone());
-    let (party_num_int, uuid) = (client.party_number, client.uuid.clone());
 
     let data = fs::read_to_string(key_file_path)
         .expect("Unable to load keys, did you run keygen first? ");
@@ -60,7 +59,11 @@ pub fn run_signer(manager_address:String, key_file_path: String, params: Params,
 
     let THRESHOLD = params.threshold.parse::<u16>().unwrap();
     let PARTIES = params.parties.parse::<u16>().unwrap();
-
+    //signup:
+    let signup_path = "signupsign";
+    let (party_num_int, uuid) = match signup(signup_path, &client, &params, CURVE_NAME.clone()).unwrap() {
+        PartySignup { number, uuid } => (number, uuid),
+    };
     println!("number: {:?}, uuid: {:?}, curve: {:?}", party_num_int, uuid, CURVE_NAME);
 
     if sign_at_path == true {
@@ -69,6 +72,8 @@ pub fn run_signer(manager_address:String, key_file_path: String, params: Params,
 
     let (_eph_keys_vec, eph_shared_keys_vec, R, eph_vss_vec) = eph_keygen_t_n_parties(
         client.clone(),
+        uuid.clone(),
+        delay,
         THRESHOLD.clone(),
         PARTIES,
         party_num_int,
@@ -82,9 +87,13 @@ pub fn run_signer(manager_address:String, key_file_path: String, params: Params,
         &shared_keys,
     );
 
-    let local_sig_vec = client.exchange_data(
+    let local_sig_vec = exchange_data(
+        client.clone(),
+        party_num_int,
         PARTIES,
+        uuid,
         "round1_local_sig",
+        delay,
         local_sig
     );
 
@@ -142,6 +151,8 @@ pub fn update_hd_derived_public_key(public_key: GE) -> GE {
 
 pub fn eph_keygen_t_n_parties(
     client: Client,
+    uuid: String,
+    delay: Duration,
     t: u16, // system threshold
     n: u16, // number of signers
     party_num_int: u16,
@@ -174,14 +185,21 @@ pub fn eph_keygen_t_n_parties(
     let mut R_vec = Vec::new();
     let (bc_i, blind) = eph_party_key.phase1_broadcast();
 
-    assert!(client.broadcast(
+    assert!(broadcast(
+        &client,
+        party_num_int,
         "eph_keygen_round1",
         serde_json::to_string(&(bc_i.clone(), blind.clone(), eph_party_key.R_i.clone())).unwrap(),
+        uuid.clone()
     )
         .is_ok());
-    let round1_ans_vec = client.poll_for_broadcasts(
+    let round1_ans_vec = poll_for_broadcasts(
+        &client,
+        party_num_int,
         n as u16,
+        delay,
         "eph_keygen_round1",
+        uuid.clone(),
     );
 
     let mut j = 0;
@@ -217,14 +235,21 @@ pub fn eph_keygen_t_n_parties(
         .expect("invalid key");
 
     // round 2: send vss commitments
-    assert!(client.broadcast(
+    assert!(broadcast(
+        &client,
+        party_num_int,
         "eph_keygen_round2",
         serde_json::to_string(&vss_scheme).unwrap(),
+        uuid.clone()
     )
         .is_ok());
-    let round2_ans_vec = client.poll_for_broadcasts(
+    let round2_ans_vec = poll_for_broadcasts(
+        &client,
+        party_num_int,
         n as u16,
+        delay,
         "eph_keygen_round2",
+        uuid.clone(),
     );
 
     let mut j = 0;
@@ -248,19 +273,26 @@ pub fn eph_keygen_t_n_parties(
             let key_i = &enc_keys[j];
             let plaintext = BigInt::to_bytes(&secret_shares[k].to_bigint());
             let aead_pack_i = aes_encrypt(key_i, &plaintext);
-            assert!(client.sendp2p(
+            assert!(sendp2p(
+                &client,
+                party_num_int,
                 i as u16,
                 "eph_keygen_round3",
                 serde_json::to_string(&aead_pack_i).unwrap(),
+                uuid.clone()
             )
                 .is_ok());
             j += 1;
         }
     }
 
-    let round3_ans_vec = client.poll_for_p2p(
+    let round3_ans_vec = poll_for_p2p(
+        &client,
+        party_num_int,
         n as u16,
+        delay,
         "eph_keygen_round3",
+        uuid.clone(),
     );
 
     let mut j = 0;
@@ -292,14 +324,21 @@ pub fn eph_keygen_t_n_parties(
         .expect("invalid vss");
 
     // round 4: send shared key
-    assert!(client.broadcast(
+    assert!(broadcast(
+        &client,
+        party_num_int,
         "eph_keygen_round4",
         serde_json::to_string(&eph_shared_key).unwrap(),
+        uuid.clone()
     )
         .is_ok());
-    let round4_ans_vec = client.poll_for_broadcasts(
+    let round4_ans_vec = poll_for_broadcasts(
+        &client,
+        party_num_int,
         n as u16,
+        delay,
         "eph_keygen_round4",
+        uuid.clone(),
     );
 
     let mut j = 0;
@@ -315,3 +354,43 @@ pub fn eph_keygen_t_n_parties(
 
     (eph_party_key, shared_keys_vec, R_sum, vss_scheme_vec)
 }
+
+
+
+pub fn exchange_data<T>(client:Client, party_num:u16, n:u16, uuid:String, round: &str, delay: Duration, data:T) -> Vec<T>
+    where
+        T: Clone + serde::de::DeserializeOwned + serde::Serialize,
+{
+    assert!(broadcast(
+        &client,
+        party_num,
+        &round,
+        serde_json::to_string(&data).unwrap(),
+        uuid.clone()
+    )
+        .is_ok());
+    let round_ans_vec = poll_for_broadcasts(
+        &client,
+        party_num,
+        n,
+        delay,
+        &round,
+        uuid.clone(),
+    );
+
+    let json_answers = round_ans_vec.clone();
+    let mut j = 0;
+    let mut answers: Vec<T> = Vec::new();
+    for i in 1..=n {
+        if i == party_num {
+            answers.push(data.clone());
+        } else {
+            let data_j: T = serde_json::from_str::<T>(&json_answers[j].clone()).unwrap();
+            answers.push(data_j);
+            j += 1;
+        }
+    }
+
+    return answers;
+}
+
