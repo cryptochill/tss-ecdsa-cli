@@ -44,9 +44,9 @@ fn main() {
                     .long("addr")
                     .takes_value(true)
                     .help("URL to manager. E.g. http://127.0.0.2:8002"))
-                .arg(Arg::with_name("curve")
-                    .short("c")
-                    .long("curve")
+                .arg(Arg::with_name("algorithm")
+                    .short("l")
+                    .long("alg")
                     .takes_value(true)
                     .help("Either ecdsa (default) or eddsa")),
             SubCommand::with_name("pubkey").about("Get X,Y of a pub key")
@@ -60,9 +60,9 @@ fn main() {
                     .long("path")
                     .takes_value(true)
                     .help("Derivation path (Optional)"))
-                .arg(Arg::with_name("curve")
-                    .short("c")
-                    .long("curve")
+                .arg(Arg::with_name("algorithm")
+                    .short("l")
+                    .long("alg")
                     .takes_value(true)
                     .help("Either ecdsa (default) or eddsa")),
             SubCommand::with_name("sign").about("Run signer")
@@ -86,9 +86,9 @@ fn main() {
                     .long("path")
                     .takes_value(true)
                     .help("Derivation path"))
-                .arg(Arg::with_name("curve")
-                    .short("c")
-                    .long("curve")
+                .arg(Arg::with_name("algorithm")
+                    .short("l")
+                    .long("alg")
                     .takes_value(true)
                     .help("Either ecdsa (default) or eddsa"))
                 .arg(Arg::with_name("manager_addr")
@@ -115,7 +115,7 @@ fn main() {
             let keysfile_path = sub_matches.value_of("keysfile").unwrap_or("");
             let path = sub_matches.value_of("path").unwrap_or("");
             let message_str = sub_matches.value_of("message").unwrap_or("");
-            let curve = sub_matches.value_of("curve").unwrap_or("ecdsa");
+            let curve = sub_matches.value_of("algorithm").unwrap_or("ecdsa");
             let manager_addr = sub_matches
                 .value_of("manager_addr")
                 .unwrap_or("http://127.0.0.1:8001")
@@ -147,7 +147,7 @@ fn main() {
                 .unwrap_or("http://127.0.0.1:8001")
                 .to_string();
             let keysfile_path = sub_matches.value_of("keysfile").unwrap_or("").to_string();
-            let curve = sub_matches.value_of("curve").unwrap_or("ecdsa");
+            let curve = sub_matches.value_of("algorithm").unwrap_or("ecdsa");
             let params: Vec<&str> = sub_matches
                 .value_of("params")
                 .unwrap_or("")
