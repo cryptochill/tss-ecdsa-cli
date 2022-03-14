@@ -23,6 +23,8 @@ use curv::elliptic::curves::{Point, Scalar, Secp256k1};
 use multi_party_ecdsa::protocols::multi_party_ecdsa::gg_2018::party_i::{
     Keys, SharedKeys
 };
+use crate::ecdsa::curv7_conversion::convert_store_data;
+use crate::ecdsa::keygen::KeygenFragment;
 
 
 //pub type Key = String;
@@ -69,28 +71,25 @@ pub fn check_sig(
 
 pub fn run_pubkey_or_sign(action:&str, keysfile_path:&str, path:&str, message_str:&str, manager_addr:String, params:Vec<&str>) -> Value {
 
-    // Read data from keys file
-    let data = fs::read_to_string(keysfile_path).expect(
-        format!("Unable to load keys file at location: {}", keysfile_path).as_str(),
-    );
-    let (party_keys, shared_keys, party_id, mut vss_scheme_vec, paillier_key_vector, y_sum): (
-        Keys,
-        SharedKeys,
-        u16,
-        Vec<VerifiableSS<Secp256k1>>,
-        Vec<EncryptionKey>,
-        GE,
-    ) = serde_json::from_str(&data).unwrap();
+    let party_fragment = read_keygen_fragment_file(keysfile_path.to_string());
+    let KeygenFragment {
+        party_keys,
+        shared_keys,
+        party_id,
+        mut vss_scheme_vector,
+        paillier_key_vector,
+        public_key
+    } = party_fragment;
 
     // Get root pub key or HD pub key at specified path
-    let (f_l_new, y_sum) = match path.is_empty() {
-        true => (Scalar::<Secp256k1>::zero(), y_sum),
+    let (f_l_new, public_key) = match path.is_empty() {
+        true => (Scalar::<Secp256k1>::zero(), public_key),
         false => {
             let path_vector: Vec<BigInt> = path
                 .split('/')
                 .map(|s| BigInt::from_str_radix(s.trim(), 10).unwrap())
                 .collect();
-            let (y_sum_child, f_l_new) = hd_keys::get_hd_key(&y_sum, path_vector.clone());
+            let (y_sum_child, f_l_new) = hd_keys::get_hd_key(&public_key, path_vector.clone());
             (f_l_new, y_sum_child.clone())
         }
     };
@@ -98,8 +97,8 @@ pub fn run_pubkey_or_sign(action:&str, keysfile_path:&str, path:&str, message_st
     // Return pub key as x,y
     let result = if action == "pubkey" {
         let ret_dict = json!({
-                    "x": &y_sum.x_coord().unwrap().to_str_radix(16),
-                    "y": &y_sum.y_coord().unwrap().to_str_radix(16),
+                    "x": &public_key.x_coord().unwrap().to_str_radix(16),
+                    "y": &public_key.y_coord().unwrap().to_str_radix(16),
                     "path": path,
                 });
         ret_dict
@@ -122,9 +121,9 @@ pub fn run_pubkey_or_sign(action:&str, keysfile_path:&str, path:&str, message_st
             party_keys,
             shared_keys,
             party_id,
-            &mut vss_scheme_vec,
+            &mut vss_scheme_vector,
             paillier_key_vector,
-            &y_sum,
+            &public_key,
             &params,
             &message,
             &f_l_new,
@@ -133,4 +132,38 @@ pub fn run_pubkey_or_sign(action:&str, keysfile_path:&str, path:&str, message_st
     };
 
     result
+}
+
+fn read_keygen_fragment_file(fragment_path: String) -> KeygenFragment{
+    // Read data from keys file
+    let data = fs::read_to_string(fragment_path.clone()).expect(
+        format!("Unable to load keys file at location: {}", fragment_path).as_str(),
+    );
+
+    let res = serde_json::from_str(&data);
+
+    if res.is_ok() {
+        let (party_keys, shared_keys, party_id, vss_scheme_vector, paillier_key_vector, public_key): (
+            Keys,
+            SharedKeys,
+            u16,
+            Vec<VerifiableSS<Secp256k1>>,
+            Vec<EncryptionKey>,
+            GE,
+        ) = res.unwrap();
+
+        return KeygenFragment{
+            party_keys,
+            shared_keys,
+            party_id,
+            vss_scheme_vector,
+            paillier_key_vector,
+            public_key
+        }
+    }
+
+    //println!("Could not load the fragment file. Trying to convert from format curv v0.7 if possible...");
+    let fragment_data = convert_store_data(data);
+
+    fragment_data
 }

@@ -9,7 +9,7 @@ use curv::{
 };
 use curv::elliptic::curves::{Scalar, Secp256k1};
 use multi_party_ecdsa::protocols::multi_party_ecdsa::gg_2018::party_i::{
-    KeyGenBroadcastMessage1, KeyGenDecommitMessage1, Keys, Parameters,
+    KeyGenBroadcastMessage1, KeyGenDecommitMessage1, Keys, Parameters, SharedKeys
 };
 use paillier::EncryptionKey;
 use sha2::{Sha256};
@@ -20,6 +20,15 @@ use crate::common::{
     signup, Client
 };
 use crate::ecdsa::{CURVE_NAME, FE, GE};
+
+pub struct KeygenFragment {
+    pub party_keys: Keys,
+    pub shared_keys: SharedKeys,
+    pub party_id: u16,
+    pub vss_scheme_vector: Vec<VerifiableSS<Secp256k1>>,
+    pub paillier_key_vector: Vec<EncryptionKey>,
+    pub public_key: GE
+}
 
 pub fn run_keygen(addr: &String, keysfile_path: &String, params: &Vec<&str>) {
     let THRESHOLD: u16 = params[0].parse::<u16>().unwrap();
