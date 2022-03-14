@@ -1,4 +1,3 @@
-use std::fs;
 use curv::arithmetic::Converter;
 use curv::BigInt;
 
@@ -66,27 +65,6 @@ fn convert_old_vss(vss: &OldVerifiableSS) -> VerifiableSS<Secp256k1> {
     }
 }
 
-pub fn convert_store_file(keys_file_path: String, destination_path: String) {
-// Read data from keys file
-    let data = fs::read_to_string(keys_file_path.clone()).expect(
-        format!("Unable to load keys file at location: {}", keys_file_path).as_str(),
-    );
-
-    let keygen_fragment_data = convert_store_data(data);
-
-    let keygen_json = serde_json::to_string(&(
-        keygen_fragment_data.party_keys,
-        keygen_fragment_data.shared_keys,
-        keygen_fragment_data.party_id,
-        keygen_fragment_data.vss_scheme_vector,
-        keygen_fragment_data.paillier_key_vector,
-        keygen_fragment_data.public_key,
-    ))
-        .unwrap();
-    println!("Keys data written to file: {:?}", destination_path);
-    fs::write(&destination_path, keygen_json).expect("Unable to save !");
-}
-
 pub fn convert_store_data(data: String) -> KeygenFragment{
 
     let (old_party_keys, old_shared_keys, party_id, old_vss_scheme_vec, paillier_key_vector, old_y_sum): (
@@ -98,7 +76,7 @@ pub fn convert_store_data(data: String) -> KeygenFragment{
         OldGE,
     ) = serde_json::from_str(&data).unwrap();
 
-    
+
     let party_keys: Keys = Keys {
         u_i: convert_old_FE(old_party_keys.u_i),
         y_i: convert_old_GE(&old_party_keys.y_i),
@@ -106,7 +84,7 @@ pub fn convert_store_data(data: String) -> KeygenFragment{
         ek: old_party_keys.ek,
         party_index: old_party_keys.party_index
     };
-    
+
     let shared_keys = SharedKeys {
         y: convert_old_GE(&old_shared_keys.y),
         x_i: convert_old_FE(old_shared_keys.x_i)

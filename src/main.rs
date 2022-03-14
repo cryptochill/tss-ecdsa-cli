@@ -96,17 +96,6 @@ fn main() {
                     .long("addr")
                     .takes_value(true)
                     .help("URL to manager")),
-            SubCommand::with_name("convert_curv_07_to_09").about("Convert format of store files from v0.1.0 to v0.2.0")
-                .arg(Arg::with_name("input_file")
-                    .required(true)
-                    .index(1)
-                    .takes_value(true)
-                    .help("Source keys file"))
-                .arg(Arg::with_name("output_file")
-                    .required(true)
-                    .index(2)
-                    .takes_value(true)
-                    .help("Output keys file"))
         ])
         .get_matches();
 
@@ -159,12 +148,6 @@ fn main() {
                 _ => {}
             }
 
-        }
-        ("convert_curv_07_to_09", Some(sub_matches)) => {
-            let source_path = sub_matches.value_of("input_file").unwrap_or("").to_string();
-            let destination_path = sub_matches.value_of("output_file").unwrap_or("").to_string();
-
-            ecdsa::curv7_conversion::convert_store_file(source_path, destination_path);
         }
         _ => {}
     }
