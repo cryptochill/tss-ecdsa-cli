@@ -1,6 +1,6 @@
 [package]
 name = "tss-cli"
-version = "0.1.0"
+version = "0.2.0"
 authors = [
     "Kaspars Sprogis <darklow@gmail.com>"
 ]
@@ -20,18 +20,33 @@ reqwest = { version = "0.10.1", default-features = false, features = ["native-tl
 uuid = { version = "0.8", features = ["v4"] }
 aes-gcm = "0.9.4"
 libsecp256k1 = "0.3.2"
-curv = { package = "curv-kzen", version = "0.7", default-features = false }
-paillier = { git = "https://github.com/KZen-networks/rust-paillier", tag = "v0.3.10"}
-zk-paillier = { git = "https://github.com/KZen-networks/zk-paillier", tag = "v0.3.12"}
+curv = { package = "curv-kzen", version = "0.9", default-features = false }
+zk-paillier = { git = "https://github.com/KZen-networks/zk-paillier", tag = "v0.4.2"}
 clap = { version = "2.33", features = ["yaml"] }
+hmac = "0.11"
+sha2 = "0.9"
+rand = "0.8"
+
+[dependencies.paillier]
+version = "0.4.2"
+package = "kzen-paillier"
+default-features = false
 
 [dependencies.multi-party-ecdsa]
-git = "https://github.com/Hrezaei/multi-party-ecdsa"
+git = "https://github.com/ZenGo-X/multi-party-ecdsa"
 #tag = "v0.3.0"
-branch = "feature/deprecate-rust-crypto"
+branch = "master"
+
+[dependencies.multi-party-eddsa]
+git = "https://github.com/HRezaei/multi-party-eddsa"
+branch = "feature/curv-0.9-examples"
 
 [patch.crates-io]
 rust-gmp = { version = "0.5.1", features = ["serde_support"], git = "https://github.com/KZen-networks/rust-gmp" }
 
 [profile.release]
 opt-level = 2
+
+
+[features]
+default = ["curv/rust-gmp-kzen"]
