@@ -16,6 +16,9 @@ use curv::{
 };
 use reqwest::blocking::Client;
 use serde::{Deserialize, Serialize};
+use curv::cryptographic_primitives::hashing::hash_sha256::HSha256;
+use curv::cryptographic_primitives::hashing::traits::Hash;
+use uuid::Uuid;
 
 pub type Key = String;
 
@@ -23,6 +26,12 @@ pub type Key = String;
 pub struct AEAD {
     pub ciphertext: Vec<u8>,
     pub tag: Vec<u8>,
+}
+
+#[derive(Clone, PartialEq, Debug, Serialize, Deserialize)]
+pub struct PartySignupRequestBody {
+    pub threshold: u16,
+    pub room_id: String,
 }
 
 #[derive(Clone, PartialEq, Debug, Serialize, Deserialize)]
@@ -252,4 +261,15 @@ pub fn check_sig(r: &FE, s: &FE, msg: &BigInt, pk: &GE) {
 
     let is_correct = verify(&msg, &secp_sig, &pk);
     assert!(is_correct);
+}
+
+fn new_sign_party() -> PartySignup {
+    PartySignup {
+        number: 0,
+        uuid: Uuid::new_v4().to_string(),
+    }
+}
+
+fn sha256_digest(input: &[u8]) -> String {
+    return HSha256::create_hash_from_slice(input).to_hex();
 }

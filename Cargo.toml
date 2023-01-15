@@ -24,6 +24,9 @@ curv = { package = "curv-kzen", version = "0.7", default-features = false }
 paillier = { git = "https://github.com/KZen-networks/rust-paillier", tag = "v0.3.10"}
 zk-paillier = { git = "https://github.com/KZen-networks/zk-paillier", tag = "v0.3.12"}
 clap = { version = "2.33", features = ["yaml"] }
+ring = "0.17.0-alpha.11"
+data-encoding="2.3.3"
+rustc-serialize="0.3"
 
 [dependencies.multi-party-ecdsa]
 git = "https://github.com/Hrezaei/multi-party-ecdsa"

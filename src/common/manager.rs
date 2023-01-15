@@ -1,15 +1,15 @@
 use std::collections::HashMap;
 use std::sync::RwLock;
 
-use rocket::{post, routes, State};
+use rocket::{Ignite, post, Rocket, routes, State};
 use rocket::serde::json::Json;
 
 use uuid::Uuid;
 
-use crate::common::{Entry, Index, Key, Params, PartySignup};
+use crate::common::{Entry, Index, Key, new_sign_party, Params, PartySignup, PartySignupRequestBody};
 
 #[rocket::main]
-pub async fn run_manager() -> Result<(), rocket::Error> {
+pub async fn run_manager() -> Result<Rocket<Ignite>, rocket::Error> {
     //     let mut my_config = Config::development();
     //     my_config.set_port(18001);
     let db: HashMap<Key, String> = HashMap::new();
@@ -24,17 +24,13 @@ pub async fn run_manager() -> Result<(), rocket::Error> {
     let sign_key = "signup-sign".to_string();
 
     let uuid_keygen = Uuid::new_v4().to_string();
-    let uuid_sign = Uuid::new_v4().to_string();
 
     let party1 = 0;
     let party_signup_keygen = PartySignup {
         number: party1,
         uuid: uuid_keygen,
     };
-    let party_signup_sign = PartySignup {
-        number: party1,
-        uuid: uuid_sign,
-    };
+    let party_signup_sign = new_sign_party();
     {
         let mut hm = db_mtx.write().unwrap();
         hm.insert(
@@ -122,12 +118,18 @@ fn signup_keygen(
 #[post("/signupsign", format = "json", data = "<request>")]
 fn signup_sign(
     db_mtx: &State<RwLock<HashMap<Key, String>>>,
-    request: Json<Params>,
+    request: Json<PartySignupRequestBody>,
 ) -> Json<Result<PartySignup, ()>> {
-    let threshold = request.threshold.parse::<u16>().unwrap();
-    let key = "signup-sign".to_string();
+    let threshold = request.clone().threshold;
+    let mut key = "signup-sign-".to_owned();
+    key.push_str(&request.room_id);
 
     let mut hm = db_mtx.write().unwrap();
+
+    if !hm.contains_key(key.as_str()) {
+        let default_value = serde_json::to_string(&new_sign_party()).unwrap();
+        hm.insert(key.clone(), default_value);
+    }
 
     let party_signup = {
         let value = hm.get(&key).unwrap();
@@ -147,10 +149,7 @@ fn signup_sign(
     if party_signup.number == threshold + 1 {
         hm.insert(
             key,
-            serde_json::to_string(&PartySignup {
-                number: 0,
-                uuid: Uuid::new_v4().to_string(),
-            })
+            serde_json::to_string(&new_sign_party())
             .unwrap(),
         );
     } else {

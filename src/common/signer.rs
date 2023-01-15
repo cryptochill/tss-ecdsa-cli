@@ -23,7 +23,7 @@ use reqwest::blocking::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
-use crate::common::{broadcast, poll_for_broadcasts, poll_for_p2p, sendp2p, Params, PartySignup};
+use crate::common::{broadcast, poll_for_broadcasts, poll_for_p2p, sendp2p, Params, PartySignup, PartySignupRequestBody, sha256_digest};
 
 #[derive(Hash, PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
 pub struct TupleKey {
@@ -49,9 +49,10 @@ pub fn sign(
     let client = Client::new();
     let delay = time::Duration::from_millis(25);
     let THRESHOLD = params.threshold.parse::<u16>().unwrap();
+    let room_id = sha256_digest(message);
 
     // Signup
-    let (party_num_int, uuid) = match signup(&addr, &client, &params).unwrap() {
+    let (party_num_int, uuid) = match signup(&addr, &client, THRESHOLD, room_id).unwrap() {
         PartySignup { number, uuid } => (number, uuid),
     };
 
@@ -623,8 +624,13 @@ where
     Some(res.unwrap().text().unwrap())
 }
 
-pub fn signup(addr: &String, client: &Client, params: &Params) -> Result<PartySignup, ()> {
-    let res_body = postb(&addr, &client, "signupsign", params).unwrap();
+pub fn signup(addr: &String, client: &Client, threshold: u16, room_id: String) -> Result<PartySignup, ()> {
+    let request_body = PartySignupRequestBody{
+        threshold,
+        room_id: room_id.clone()
+    };
+
+    let res_body = postb(&addr, &client, "signupsign", request_body).unwrap();
     let answer: Result<PartySignup, ()> = serde_json::from_str(&res_body).unwrap();
     return answer;
 }
