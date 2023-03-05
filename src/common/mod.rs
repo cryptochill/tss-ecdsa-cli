@@ -51,6 +51,18 @@ pub struct Entry {
     pub value: String,
 }
 
+#[derive(Clone, PartialEq, Debug, Serialize, Deserialize)]
+pub struct ManagerError {
+    pub error: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type")]
+enum Thing {
+    ThingA(Entry),
+    ThingB(ManagerError),
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Params {
     pub parties: String,
@@ -190,12 +202,23 @@ pub fn poll_for_broadcasts(
                 // add delay to allow the server to process request:
                 thread::sleep(delay);
                 let res_body = postb(&addr, &client, "get", index.clone()).unwrap();
+                println!("RES body: {:?}", res_body);
                 let answer: Result<Entry, ()> = serde_json::from_str(&res_body).unwrap();
-                if let Ok(answer) = answer {
+                match answer {
+                    Ok(answer) => {
+                        ans_vec.push(answer.value);
+                        println!("[{:?}] party {:?} => party {:?}", round, i, party_num);
+                        break;
+                    },
+                    Err(error) => {
+                        println!("[{:?}] party {:?} => party {:?}", round, i, party_num);
+                    }
+                }
+                /*if let Ok(answer) = answer {
                     ans_vec.push(answer.value);
                     println!("[{:?}] party {:?} => party {:?}", round, i, party_num);
                     break;
-                }
+                }*/
             }
         }
     }
