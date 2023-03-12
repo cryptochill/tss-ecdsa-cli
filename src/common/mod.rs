@@ -3,10 +3,14 @@ pub mod keygen;
 pub mod manager;
 pub mod signer;
 
-use std::{iter::repeat, thread, time, time::Duration};
+use std::{env, iter::repeat, thread, time, time::Duration};
+use std::collections::HashMap;
+use std::str::FromStr;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use aes_gcm::{Aes256Gcm, Nonce};
 use aes_gcm::aead::{NewAead, Aead, Payload};
+use std::convert::TryFrom;
 
 use curv::{
     arithmetic::traits::Converter,
@@ -20,7 +24,10 @@ use curv::cryptographic_primitives::hashing::hash_sha256::HSha256;
 use curv::cryptographic_primitives::hashing::traits::Hash;
 use uuid::Uuid;
 
+
 pub type Key = String;
+pub const SIGNUP_TIMEOUT_ENV: &str = "TSS_MANAGER_SIGNUP_TIMEOUT";
+pub const SIGNUP_TIMEOUT_DEFAULT: &str = "5";
 
 #[derive(Clone, PartialEq, Debug, Serialize, Deserialize)]
 pub struct AEAD {
@@ -32,12 +39,37 @@ pub struct AEAD {
 pub struct PartySignupRequestBody {
     pub threshold: u16,
     pub room_id: String,
+    pub party_number: u16,  // It's better to rename this to fragment_index
+    pub party_uuid: String
 }
 
 #[derive(Clone, PartialEq, Debug, Serialize, Deserialize)]
 pub struct PartySignup {
     pub number: u16,
     pub uuid: String,
+}
+
+#[derive(Clone, PartialEq, Debug, Serialize, Deserialize)]
+pub struct SigningPartySignup {
+    pub party_order: u16,
+    pub party_uuid: String,
+    pub room_uuid: String
+}
+
+#[derive(Clone, PartialEq, Debug, Serialize, Deserialize)]
+pub struct SigningPartyInfo {
+    pub party_id: String,
+    pub party_order: u16,
+    pub last_ping: u64,
+}
+
+#[derive(Clone, PartialEq, Debug, Serialize, Deserialize)]
+pub struct SigningRoom {
+    pub room_id: String, // ID set by clients/parties, used during signup
+    pub room_uuid: String, // ID set by manager, used during the rounds
+    pub room_size: u16,
+    pub member_info: HashMap<u16, SigningPartyInfo>,
+    pub last_stage: String
 }
 
 #[derive(Clone, PartialEq, Debug, Serialize, Deserialize)]
@@ -202,16 +234,15 @@ pub fn poll_for_broadcasts(
                 // add delay to allow the server to process request:
                 thread::sleep(delay);
                 let res_body = postb(&addr, &client, "get", index.clone()).unwrap();
-                println!("RES body: {:?}", res_body);
-                let answer: Result<Entry, ()> = serde_json::from_str(&res_body).unwrap();
+                let answer: Result<Entry, ManagerError> = serde_json::from_str(&res_body).unwrap();
                 match answer {
                     Ok(answer) => {
                         ans_vec.push(answer.value);
                         println!("[{:?}] party {:?} => party {:?}", round, i, party_num);
                         break;
                     },
-                    Err(error) => {
-                        println!("[{:?}] party {:?} => party {:?}", round, i, party_num);
+                    Err(ManagerError{error}) => {
+                        println!("[{:?}] party {:?} => party {:?}, error: {:?}", round, i, party_num, error);
                     }
                 }
                 /*if let Ok(answer) = answer {
@@ -286,13 +317,121 @@ pub fn check_sig(r: &FE, s: &FE, msg: &BigInt, pk: &GE) {
     assert!(is_correct);
 }
 
-fn new_sign_party() -> PartySignup {
-    PartySignup {
-        number: 0,
-        uuid: Uuid::new_v4().to_string(),
+fn new_sign_party(party_order: u16) -> SigningPartySignup {
+    SigningPartySignup {
+        party_order,
+        room_uuid: "".to_string(),
+        party_uuid: Uuid::new_v4().to_string(),
+    }
+}
+
+fn new_signing_room(room_id: String, size: u16) -> SigningRoom {
+    SigningRoom {
+        room_size: size,
+        member_info: Default::default(),
+        room_id,
+        last_stage: "signup".to_string(),
+        room_uuid: Uuid::new_v4().to_string(),
     }
 }
 
 fn sha256_digest(input: &[u8]) -> String {
     return HSha256::create_hash_from_slice(input).to_hex();
+}
+
+impl SigningRoom {
+
+    fn is_full(&self) -> bool {
+       self.member_info.len() == usize::from(self.room_size)
+    }
+
+    fn add_party(&mut self, party_number: u16) -> SigningPartySignup {
+        let party_signup= new_sign_party(
+            u16::try_from(self.member_info.len()).unwrap() + 1,
+        );
+        self.member_info.insert(party_number, SigningPartyInfo{
+            party_id: party_signup.party_uuid.clone(),
+            party_order: party_signup.party_order,
+            last_ping: SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs()
+        });
+
+        /*if self.member_info.len() >= self.room_size {
+            self.last_stage = "signup-completed".to_string();
+        }*/
+
+        party_signup.clone()
+    }
+
+    fn replace_party(&mut self, party_number: u16) -> SigningPartySignup {
+        let old_party = self.member_info.get(&party_number).unwrap();
+        let party_signup= new_sign_party(old_party.party_order);
+        *self.member_info.get_mut(&party_number).unwrap() = SigningPartyInfo{
+            party_id: party_signup.party_uuid.clone(),
+            party_order: party_signup.party_order,
+            last_ping: SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs()
+        };
+
+        party_signup.clone()
+    }
+
+    fn are_all_members_active(&self) -> bool {
+        let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
+        let timeout = u64::from_str(
+            env::var(SIGNUP_TIMEOUT_ENV).unwrap_or(SIGNUP_TIMEOUT_DEFAULT.to_string()).as_str()
+        ).unwrap();
+
+        self.member_info.values().all(
+            |x| x.last_ping > now - timeout
+        )
+    }
+
+    fn are_all_members_inactive(&self) -> bool {
+        let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
+        let timeout = u64::from_str(
+            env::var(SIGNUP_TIMEOUT_ENV).unwrap_or(SIGNUP_TIMEOUT_DEFAULT.to_string()).as_str()
+        ).unwrap();
+
+        self.is_full() && (!self.member_info.values().any(
+            |x| x.last_ping > now - timeout
+        ))
+    }
+
+    fn is_member_active(&self, party_number: u16) -> bool {
+        let party_data = self.member_info.get(&party_number).unwrap();
+        let now = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs();
+        let timeout = u64::from_str(
+            env::var(SIGNUP_TIMEOUT_ENV).unwrap_or(SIGNUP_TIMEOUT_DEFAULT.to_string()).as_str()
+        ).unwrap();
+
+        party_data.last_ping > now - timeout
+    }
+
+    fn update_ping(&mut self, party_number: u16) -> SigningPartySignup {
+        let party_data = self.member_info.get_mut(&party_number).unwrap();
+        party_data.last_ping = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_secs();
+        if self.is_full() && self.are_all_members_active() {
+            self.last_stage = "terminated".to_string();
+        }
+        self.get_signup_info(party_number)
+    }
+
+    fn has_member(&self, party_number: u16, party_uuid: String) -> bool {
+        self.member_info.contains_key(&party_number) &&
+            self.member_info.get(&party_number).unwrap().party_id == party_uuid
+    }
+
+    fn get_signup_info(&self, party_number: u16) -> SigningPartySignup {
+        let member_info = self.member_info.get(&party_number).unwrap();
+        let room_uuid = if self.last_stage == "signup" {
+            "".to_string()
+        }
+        else {
+            self.room_uuid.clone()
+        };
+        SigningPartySignup{
+            party_order: member_info.party_order,
+            party_uuid: member_info.party_id.clone(),
+            room_uuid
+        }
+    }
 }

@@ -5,7 +5,8 @@ extern crate paillier;
 extern crate reqwest;
 extern crate serde_json;
 
-use std::time;
+use std::{thread, time};
+use std::time::Duration;
 
 use curv::cryptographic_primitives::proofs::sigma_correct_homomorphic_elgamal_enc::HomoELGamalProof;
 use curv::cryptographic_primitives::proofs::sigma_dlog::DLogProof;
@@ -22,9 +23,8 @@ use paillier::*;
 use reqwest::blocking::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use rustc_serialize::hex::ToHex;
 
-use crate::common::{broadcast, poll_for_broadcasts, poll_for_p2p, sendp2p, Params, PartySignup, PartySignupRequestBody, sha256_digest};
+use crate::common::{broadcast, poll_for_broadcasts, poll_for_p2p, sendp2p, Params, PartySignup, PartySignupRequestBody, sha256_digest, SigningPartySignup, ManagerError};
 
 #[derive(Hash, PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
 pub struct TupleKey {
@@ -51,10 +51,9 @@ pub fn sign(
     let delay = time::Duration::from_millis(25);
     let THRESHOLD = params.threshold.parse::<u16>().unwrap();
     let room_id = sha256_digest(message);
-    println!("SHA-256 digest is {:?}", room_id);
 
     // Signup
-    let (party_num_int, uuid) = match signup(&addr, &client, THRESHOLD, room_id).unwrap() {
+    let (party_num_int, uuid) = match signup(&addr, &client, THRESHOLD, room_id, party_id, "".to_string()).unwrap() {
         PartySignup { number, uuid } => (number, uuid),
     };
 
@@ -622,18 +621,44 @@ where
     let res = client
         .post(&format!("{}/{}", addr, path))
         .json(&body)
+        .timeout(Duration::from_secs(600))
         .send();
     Some(res.unwrap().text().unwrap())
 }
 
-pub fn signup(addr: &String, client: &Client, threshold: u16, room_id: String) -> Result<PartySignup, ()> {
+pub fn signup(addr: &String, client: &Client, threshold: u16, room_id: String, party_id: u16, party_uuid: String) -> Result<PartySignup, ()> {
     let request_body = PartySignupRequestBody{
         threshold,
-        room_id: room_id.clone()
+        room_id: room_id.clone(),
+        party_number: party_id,
+        party_uuid: party_uuid.clone()
     };
-    println!("SHA-256 digest is2 {:?}", room_id);
+    let path = "signupsign";
+    let delay = time::Duration::from_millis(100);
+    let called_first_time = party_uuid.is_empty();
 
-    let res_body = postb(&addr, &client, "signupsign", request_body).unwrap();
-    let answer: Result<PartySignup, ()> = serde_json::from_str(&res_body).unwrap();
-    return answer;
+    let res_body = postb(&addr, &client, path, request_body).unwrap();
+    let answer: Result<SigningPartySignup, ManagerError> = serde_json::from_str(&res_body).unwrap();
+    let output = match answer {
+        Ok(SigningPartySignup{party_order, party_uuid, room_uuid}) => {
+            if room_uuid.is_empty() {
+                if called_first_time {
+                    println!("Signed up, party order: {:?}, waiting for room uuid", party_order);
+                }
+                thread::sleep(delay);
+                return signup(addr, client, threshold, room_id, party_id, party_uuid);
+            }
+            else {
+                PartySignup {
+                    number: party_order,
+                    uuid: room_uuid
+                }
+            }
+        },
+        Err(ManagerError{error}) => {
+            panic!("{}", error);
+        }
+    };
+
+    return Ok(output);
 }

@@ -1,19 +1,15 @@
-use std::collections::HashMap;
 use std::sync::RwLock;
-use std::time::Duration;
+use std::time::{Duration};
 
-use rocket::{Ignite, post, response, Rocket, routes, State};
-use rocket::http::{ContentType, Status};
-use rocket::request::Request;
-use rocket::response::{Responder, Response};
+use rocket::{Ignite, post, Rocket, routes, State};
 use rocket::serde::json::Json;
-use serde_json::{json, Value};
+use serde_json::{json};
 
 use ttlhashmap::TtlHashMap;
 
 use uuid::Uuid;
 
-use crate::common::{Entry, Index, Key, new_sign_party, Params, PartySignup, PartySignupRequestBody};
+use crate::common::{Entry, Index, Key, ManagerError, new_signing_room, Params, PartySignup, PartySignupRequestBody, SigningPartySignup};
 
 #[rocket::main]
 pub async fn run_manager() -> Result<Rocket<Ignite>, rocket::Error> {
@@ -30,7 +26,7 @@ pub async fn run_manager() -> Result<Rocket<Ignite>, rocket::Error> {
     /////////////////////////////////////////////////////////////////
 
     let keygen_key = "signup-keygen".to_string();
-    let sign_key = "signup-sign".to_string();
+    //let sign_key = "signup-sign".to_string();
 
     let uuid_keygen = Uuid::new_v4().to_string();
 
@@ -39,14 +35,14 @@ pub async fn run_manager() -> Result<Rocket<Ignite>, rocket::Error> {
         number: party1,
         uuid: uuid_keygen,
     };
-    let party_signup_sign = new_sign_party();
+    //let party_signup_sign = new_sign_party();
     {
         let mut hm = db_mtx.write().unwrap();
         hm.insert(
             keygen_key,
             serde_json::to_string(&party_signup_keygen).unwrap(),
         );
-        hm.insert(sign_key, serde_json::to_string(&party_signup_sign).unwrap());
+        //hm.insert(sign_key, serde_json::to_string(&party_signup_sign).unwrap());
     }
     /////////////////////////////////////////////////////////////////
     rocket::build()
@@ -56,39 +52,13 @@ pub async fn run_manager() -> Result<Rocket<Ignite>, rocket::Error> {
         .await
 }
 
-fn default_sign_party() -> PartySignup {
-    let uuid_sign = Uuid::new_v4().to_string();
-    let party1 = 0;
-
-    PartySignup {
-        number: party1,
-        uuid: uuid_sign,
-    }
-}
-
-#[derive(Debug)]
-struct ApiResponse {
-    json: Value,
-    status: Status,
-}
-
-impl<'r> Responder<'r, 'static> for ApiResponse {
-    fn respond_to(self, req: &Request) -> response::Result<'static> {
-        Response::build_from(self.json.respond_to(&req).unwrap())
-            .status(self.status)
-            .header(ContentType::JSON)
-            .ok()
-    }
-}
-
 #[post("/get", format = "json", data = "<request>")]
 fn get(
     db_mtx: &State<RwLock<TtlHashMap<Key, String>>>,
     request: Json<Index>,
-) -> Json<Result<Entry, ()>> {
+) -> Json<Result<Entry, ManagerError>> {
     let index: Index = request.0;
     let mut hm = db_mtx.write().unwrap();
-    println!("request to get {:?}", index.key);
 
     match hm.get(&index.key) {
         Some(v) => {
@@ -98,7 +68,11 @@ fn get(
             };
             Json(Ok(entry))
         }
-        None => Json(Err(())),
+        None => {
+            Json(Err(ManagerError{
+                error: "Key not found: ".to_string() + index.key.as_str()
+            }))
+        },
     }
 }
 
@@ -106,7 +80,6 @@ fn get(
 fn set(db_mtx: &State<RwLock<TtlHashMap<Key, String>>>, request: Json<Entry>) -> Json<Result<(), ()>> {
     let entry: Entry = request.0;
     let mut hm = db_mtx.write().unwrap();
-    println!("request to set {:?} as {:?}", entry.key, entry.value);
     hm.insert(entry.key.clone(), entry.value.clone());
     Json(Ok(()))
 }
@@ -156,47 +129,74 @@ fn signup_keygen(
 fn signup_sign(
     db_mtx: &State<RwLock<TtlHashMap<Key, String>>>,
     request: Json<PartySignupRequestBody>,
-) -> Json<Result<PartySignup, ()>> {
+) -> Json<Result<SigningPartySignup, ManagerError>> {
     let threshold = request.clone().threshold;
+    let room_id = request.room_id.clone();
+    let party_uuid = request.party_uuid.clone();
+    let new_signup_request = party_uuid.is_empty();
+    let party_number = request.party_number;
     let mut key = "signup-sign-".to_owned();
-    key.push_str(&request.room_id);
-    println!("the key is: {}", key);
+    key.push_str(&room_id);
 
     let mut hm = db_mtx.write().unwrap();
 
-    if !hm.contains_key(key.as_str()) {
-        let default_value = serde_json::to_string(&new_sign_party()).unwrap();
-        hm.insert(key.clone(), default_value);
+    let mut signing_room = match hm.get(&key) {
+        Some(o) => serde_json::from_str(o).unwrap(),
+        None => new_signing_room(room_id.clone(), threshold+1),
+    };
+
+    if signing_room.last_stage != "signup" {
+        if signing_room.has_member(party_number, party_uuid.clone()) {
+            return Json(Ok(signing_room.get_signup_info(party_number)));
+        }
+
+        if signing_room.are_all_members_inactive() {
+            let debug = json!({
+                "message": "All parties have been inactive. Renewed the room.",
+                "room_id": room_id,
+                "fragment.index": party_number,
+            });
+            println!("{}", serde_json::to_string_pretty(&debug).unwrap());
+            signing_room = new_signing_room(room_id, threshold + 1)
+        }
+        else {
+            return Json(Err(ManagerError{
+                error: "Room signup phase is terminated".to_string()
+            }));
+        }
+    }
+
+    if signing_room.is_full() && signing_room.are_all_members_active() && new_signup_request {
+        return Json(Err(ManagerError{
+            error: "Room is full, all members active".to_string()
+        }));
     }
 
     let party_signup = {
-        //let value = hm.get(&key).unwrap();
-        let value = hm.get(key.as_str()).unwrap();
-        /*let value = match hm.entry(key) {
-            Entry::Occupied(o) => o.into_mut(),
-            Entry::Vacant(v) => v.insert(default_sign_party()),
-        };*/
-        let client_signup: PartySignup = serde_json::from_str(&value).unwrap();
-        if client_signup.number < threshold + 1 {
-            PartySignup {
-                number: client_signup.number + 1,
-                uuid: client_signup.uuid,
+        if !new_signup_request {
+            if !signing_room.has_member(party_number, party_uuid) {
+                return Json(Err(ManagerError{
+                    error: "No party found with the given uuid, probably replaced due to timeout".to_string()
+                }));
             }
-        } else {
-            PartySignup {
-                number: 1,
-                uuid: Uuid::new_v4().to_string(),
+            //if signing_room.is_member_active(party_number) {
+            signing_room.update_ping(party_number)
+            //}
+            //Else is handled in the next block
+        } else if signing_room.member_info.contains_key(&party_number) {
+            if signing_room.is_member_active(party_number) {
+                return Json(Err(ManagerError{
+                    error: "Received a re-signup request for an active party. Request ignored".to_string()
+                }));
             }
+            println!("Received a re-signup request for a timed-out party, thus UUID is renewed");
+            signing_room.replace_party(party_number)
+        }
+        else {
+            signing_room.add_party(party_number)
         }
     };
-    if party_signup.number == threshold + 1 {
-        hm.insert(
-            key,
-            serde_json::to_string(&new_sign_party())
-            .unwrap(),
-        );
-    } else {
-        hm.insert(key, serde_json::to_string(&party_signup).unwrap());
-    }
+
+    hm.insert(key.clone(), serde_json::to_string(&signing_room).unwrap());
     Json(Ok(party_signup))
 }
