@@ -626,39 +626,63 @@ where
     Some(res.unwrap().text().unwrap())
 }
 
-pub fn signup(addr: &String, client: &Client, threshold: u16, room_id: String, party_id: u16, party_uuid: String) -> Result<PartySignup, ()> {
-    let request_body = PartySignupRequestBody{
+pub fn signup(addr: &String, client: &Client, threshold: u16, room_id: String, party_id: u16) -> Result<(PartySignup, u16), ()> {
+    let mut request_body = PartySignupRequestBody{
         threshold,
         room_id: room_id.clone(),
         party_number: party_id,
-        party_uuid: party_uuid.clone()
+        party_uuid: "".to_string()
     };
     let path = "signupsign";
     let delay = time::Duration::from_millis(100);
-    let called_first_time = party_uuid.is_empty();
-
-    let res_body = postb(&addr, &client, path, request_body).unwrap();
+    let timeout = std::env::var("TSS_CLI_SIGNUP_TIMEOUT")
+        .unwrap_or("30".to_string()).parse::<u64>().unwrap();
+    let res_body = postb(&addr, &client, path, request_body.clone()).unwrap();
     let answer: Result<SigningPartySignup, ManagerError> = serde_json::from_str(&res_body).unwrap();
-    let output = match answer {
-        Ok(SigningPartySignup{party_order, party_uuid, room_uuid}) => {
-            if room_uuid.is_empty() {
-                if called_first_time {
-                    println!("Signed up, party order: {:?}, waiting for room uuid", party_order);
-                }
+    let (output, total_parties) = match answer {
+        Ok(SigningPartySignup{party_order, party_uuid, room_uuid, total_joined}) => {
+            println!("Signed up, party order: {:?}, joined so far: {:?}, waiting for room uuid", party_order, total_joined);
+            let now = time::SystemTime::now();
+            let mut last_total_joined = total_joined;
+            let mut party_signup = PartySignup {
+                number: party_order,
+                uuid: room_uuid
+            };
+            while party_signup.uuid.is_empty() {
                 thread::sleep(delay);
-                return signup(addr, client, threshold, room_id, party_id, party_uuid);
-            }
-            else {
-                PartySignup {
-                    number: party_order,
-                    uuid: room_uuid
+                request_body.party_uuid = party_uuid.clone();
+                let res_body = postb(&addr, &client, path, request_body.clone()).unwrap();
+                let answer: Result<SigningPartySignup, ManagerError> = serde_json::from_str(&res_body).unwrap();
+                match answer {
+                    Ok(SigningPartySignup{party_order, party_uuid, room_uuid, total_joined}) => {
+                        request_body.party_uuid = party_uuid;
+                        if party_signup.number != party_order {
+                            println!("Order is changed: {:?}", party_order);
+                            party_signup.number = party_order;
+                        }
+                        party_signup.uuid = room_uuid;
+                        if total_joined != last_total_joined {
+                            println!("Joined so far: {:?}", total_joined);
+                            last_total_joined = total_joined;
+                        }
+                    },
+                    Err(ManagerError{error}) => {
+                        panic!("{}", error);
+                    }
+                };
+                if now.elapsed().unwrap().as_secs() > timeout{
+                    break;
                 }
             }
+            if party_signup.uuid.is_empty() {
+                panic!("Could not get room uuid after {:?} seconds of tries", timeout);
+            }
+            (party_signup, last_total_joined)
         },
         Err(ManagerError{error}) => {
             panic!("{}", error);
         }
     };
 
-    return Ok(output);
+    return Ok((output, total_parties));
 }

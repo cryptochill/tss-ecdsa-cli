@@ -9,7 +9,7 @@ use ttlhashmap::TtlHashMap;
 
 use uuid::Uuid;
 
-use crate::common::{Entry, Index, Key, ManagerError, new_signing_room, Params, PartySignup, PartySignupRequestBody, SigningPartySignup};
+use crate::common::{Entry, Index, Key, ManagerError, Params, PartySignup, PartySignupRequestBody, SigningPartySignup, SigningRoom};
 
 #[rocket::main]
 pub async fn run_manager() -> Result<Rocket<Ignite>, rocket::Error> {
@@ -142,7 +142,7 @@ fn signup_sign(
 
     let mut signing_room = match hm.get(&key) {
         Some(o) => serde_json::from_str(o).unwrap(),
-        None => new_signing_room(room_id.clone(), threshold+1),
+        None => SigningRoom::new(room_id.clone(), threshold+1),
     };
 
     if signing_room.last_stage != "signup" {
@@ -157,7 +157,7 @@ fn signup_sign(
                 "fragment.index": party_number,
             });
             println!("{}", serde_json::to_string_pretty(&debug).unwrap());
-            signing_room = new_signing_room(room_id, threshold + 1)
+            signing_room = SigningRoom::new(room_id, threshold + 1)
         }
         else {
             return Json(Err(ManagerError{
