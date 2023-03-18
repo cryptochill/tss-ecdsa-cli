@@ -53,8 +53,8 @@ pub fn sign(
     let room_id = sha256_digest(message);
 
     // Signup
-    let (party_num_int, uuid) = match signup(&addr, &client, THRESHOLD, room_id, party_id, "".to_string()).unwrap() {
-        PartySignup { number, uuid } => (number, uuid),
+    let (party_num_int, uuid, total_parties) = match signup(&addr, &client, THRESHOLD, room_id, party_id).unwrap() {
+        (PartySignup { number, uuid }, total_parties) => (number, uuid, total_parties),
     };
 
     let debug = json!({"manager_addr": &addr, "party_num": party_num_int, "uuid": uuid});
@@ -75,14 +75,14 @@ pub fn sign(
         &addr,
         &client,
         party_num_int,
-        THRESHOLD + 1,
+        total_parties,
         delay,
         "round0",
         uuid.clone(),
     );
     let mut j = 0;
     let mut signers_vec: Vec<usize> = Vec::new();
-    for i in 1..=THRESHOLD + 1 {
+    for i in 1..=total_parties {
         if i == party_num_int {
             signers_vec.push((party_id - 1) as usize);
         } else {
@@ -158,7 +158,7 @@ pub fn sign(
         &addr,
         &client,
         party_num_int,
-        THRESHOLD + 1,
+        total_parties,
         delay,
         "round1",
         uuid.clone(),
@@ -168,7 +168,7 @@ pub fn sign(
     let mut bc1_vec: Vec<SignBroadcastPhase1> = Vec::new();
     let mut m_a_vec: Vec<MessageA> = Vec::new();
 
-    for i in 1..THRESHOLD + 2 {
+    for i in 1..total_parties + 1 {
         if i == party_num_int {
             bc1_vec.push(com.clone());
         //   m_a_vec.push(m_a_k.clone());
@@ -191,7 +191,7 @@ pub fn sign(
     let mut m_b_w_send_vec: Vec<MessageB> = Vec::new();
     let mut ni_vec: Vec<FE> = Vec::new();
     let mut j = 0;
-    for i in 1..THRESHOLD + 2 {
+    for i in 1..total_parties + 1 {
         if i != party_num_int {
             let (m_b_gamma, beta_gamma, _, _) = MessageB::b(
                 &sign_keys.gamma_i,
@@ -216,7 +216,7 @@ pub fn sign(
     }
 
     let mut j = 0;
-    for i in 1..THRESHOLD + 2 {
+    for i in 1..total_parties + 1 {
         if i != party_num_int {
             assert!(sendp2p(
                 &addr,
@@ -237,7 +237,7 @@ pub fn sign(
         &addr,
         &client,
         party_num_int,
-        THRESHOLD + 1,
+        total_parties + 1,
         delay,
         "round2",
         uuid.clone(),
@@ -246,7 +246,7 @@ pub fn sign(
     let mut m_b_gamma_rec_vec: Vec<MessageB> = Vec::new();
     let mut m_b_w_rec_vec: Vec<MessageB> = Vec::new();
 
-    for i in 0..THRESHOLD {
+    for i in 0..total_parties-1 {
         //  if signers_vec.contains(&(i as usize)) {
         let (m_b_gamma_i, m_b_w_i): (MessageB, MessageB) =
             serde_json::from_str(&round2_ans_vec[i as usize]).unwrap();
@@ -260,7 +260,7 @@ pub fn sign(
 
     let xi_com_vec = Keys::get_commitments_to_xi(&vss_scheme_vec);
     let mut j = 0;
-    for i in 1..THRESHOLD + 2 {
+    for i in 1..total_parties + 1 {
         //        println!("mbproof p={}, i={}, j={}", party_num_int, i, j);
         if i != party_num_int {
             //            println!("verifying: p={}, i={}, j={}", party_num_int, i, j);
@@ -304,7 +304,7 @@ pub fn sign(
         &addr,
         &client,
         party_num_int,
-        THRESHOLD + 1,
+        total_parties,
         delay,
         "round3",
         uuid.clone(),
@@ -333,7 +333,7 @@ pub fn sign(
         &addr,
         &client,
         party_num_int,
-        THRESHOLD + 1,
+        total_parties,
         delay,
         "round4",
         uuid.clone(),
@@ -382,7 +382,7 @@ pub fn sign(
         &addr,
         &client,
         party_num_int.clone(),
-        THRESHOLD + 1,
+        total_parties,
         delay.clone(),
         "round5",
         uuid.clone(),
@@ -415,7 +415,7 @@ pub fn sign(
         &addr,
         &client,
         party_num_int.clone(),
-        THRESHOLD + 1,
+        total_parties,
         delay.clone(),
         "round6",
         uuid.clone(),
@@ -439,13 +439,13 @@ pub fn sign(
     let decommit5a_and_elgamal_vec_includes_i = decommit5a_and_elgamal_and_dlog_vec.clone();
     decommit5a_and_elgamal_and_dlog_vec.remove((party_num_int - 1) as usize);
     commit5a_vec.remove((party_num_int - 1) as usize);
-    let phase_5a_decomm_vec = (0..THRESHOLD)
+    let phase_5a_decomm_vec = (0..total_parties - 1)
         .map(|i| decommit5a_and_elgamal_and_dlog_vec[i as usize].0.clone())
         .collect::<Vec<Phase5ADecom1>>();
-    let phase_5a_elgamal_vec = (0..THRESHOLD)
+    let phase_5a_elgamal_vec = (0..total_parties - 1)
         .map(|i| decommit5a_and_elgamal_and_dlog_vec[i as usize].1.clone())
         .collect::<Vec<HomoELGamalProof<GE>>>();
-    let phase_5a_dlog_vec = (0..THRESHOLD)
+    let phase_5a_dlog_vec = (0..total_parties - 1)
         .map(|i| decommit5a_and_elgamal_and_dlog_vec[i as usize].2.clone())
         .collect::<Vec<DLogProof<GE>>>();
     let (phase5_com2, phase_5d_decom2) = local_sig
@@ -473,7 +473,7 @@ pub fn sign(
         &addr,
         &client,
         party_num_int.clone(),
-        THRESHOLD + 1,
+        total_parties,
         delay.clone(),
         "round7",
         uuid.clone(),
@@ -501,7 +501,7 @@ pub fn sign(
         &addr,
         &client,
         party_num_int.clone(),
-        THRESHOLD + 1,
+        total_parties,
         delay.clone(),
         "round8",
         uuid.clone(),
@@ -515,7 +515,7 @@ pub fn sign(
         &mut decommit5d_vec,
     );
 
-    let phase_5a_decomm_vec_includes_i = (0..THRESHOLD + 1)
+    let phase_5a_decomm_vec_includes_i = (0..total_parties)
         .map(|i| decommit5a_and_elgamal_vec_includes_i[i as usize].0.clone())
         .collect::<Vec<Phase5ADecom1>>();
     let s_i = local_sig
@@ -540,7 +540,7 @@ pub fn sign(
         &addr,
         &client,
         party_num_int.clone(),
-        THRESHOLD + 1,
+        total_parties,
         delay.clone(),
         "round9",
         uuid.clone(),
