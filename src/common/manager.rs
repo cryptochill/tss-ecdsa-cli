@@ -9,7 +9,8 @@ use ttlhashmap::TtlHashMap;
 
 use uuid::Uuid;
 
-use crate::common::{Entry, Index, Key, ManagerError, Params, PartySignup, PartySignupRequestBody, SigningPartySignup, SigningRoom};
+use crate::common::{Entry, Index, Key, ManagerError, Params, PartySignup, PartySignupRequestBody, SigningPartySignup};
+use crate::common::signing_room::SigningRoom;
 
 #[rocket::main]
 pub async fn run_manager() -> Result<Rocket<Ignite>, rocket::Error> {
