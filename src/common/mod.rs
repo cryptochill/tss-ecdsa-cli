@@ -7,6 +7,7 @@ use std::{env, iter::repeat, thread, time, time::Duration};
 use std::collections::HashMap;
 use std::str::FromStr;
 use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::Instant;
 
 use aes_gcm::{Aes256Gcm, Nonce};
 use aes_gcm::aead::{NewAead, Aead, Payload};
@@ -226,13 +227,15 @@ pub fn poll_for_broadcasts(
     sender_uuid: String,
 ) -> Vec<String> {
     let mut ans_vec = Vec::new();
+    let timeout = std::env::var("TSS_CLI_POLL_TIMEOUT")
+        .unwrap_or("30".to_string()).parse::<u64>().unwrap();
     for i in 1..=n {
         if i != party_num {
             let key = format!("{}-{}-{}", i, round, sender_uuid);
             let index = Index { key };
+            let start_time = Instant::now();
             loop {
                 // add delay to allow the server to process request:
-                thread::sleep(delay);
                 let res_body = postb(&addr, &client, "get", index.clone()).unwrap();
                 let answer: Result<Entry, ManagerError> = serde_json::from_str(&res_body).unwrap();
                 match answer {
@@ -245,11 +248,11 @@ pub fn poll_for_broadcasts(
                         println!("[{:?}] party {:?} => party {:?}, error: {:?}", round, i, party_num, error);
                     }
                 }
-                /*if let Ok(answer) = answer {
-                    ans_vec.push(answer.value);
-                    println!("[{:?}] party {:?} => party {:?}", round, i, party_num);
-                    break;
-                }*/
+                if start_time.elapsed().as_secs() > timeout {
+                    panic!("Polling timed out! No response received from party number {:?}", i);
+                };
+
+                thread::sleep(delay);
             }
         }
     }
