@@ -224,6 +224,7 @@ pub fn poll_for_broadcasts(
                         break;
                     },
                     Err(ManagerError{error}) => {
+                        #[cfg(debug_assertions)]
                         println!("[{:?}] party {:?} => party {:?}, error: {:?}", round, i, party_num, error);
                     }
                 }
@@ -264,6 +265,7 @@ pub fn poll_for_p2p(
                         break;
                     },
                     Err(ManagerError{error}) => {
+                        #[cfg(debug_assertions)]
                         println!("[{:?}] party {:?} => party {:?}, error: {:?}", round, i, party_num, error);
                         break;
                     }
