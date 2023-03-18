@@ -16,7 +16,7 @@ pub async fn run_manager() -> Result<Rocket<Ignite>, rocket::Error> {
     //     let mut my_config = Config::development();
     //     my_config.set_port(18001);
     let ttl = std::env::var("TSS_CLI_MANAGER_TTL")
-        .unwrap_or("30".to_string()).parse::<u64>().unwrap();
+        .unwrap_or("300".to_string()).parse::<u64>().unwrap();
     let db: TtlHashMap<Key, String> = TtlHashMap::new(Duration::from_secs(ttl));
     let db_mtx = RwLock::new(db);
     //rocket::custom(my_config).mount("/", routes![get, set]).manage(db_mtx).launch();
@@ -189,7 +189,7 @@ fn signup_sign(
                     error: "Received a re-signup request for an active party. Request ignored".to_string()
                 }));
             }
-            println!("Received a re-signup request for a timed-out party, thus UUID is renewed");
+            println!("Received a re-signup request for a timed-out party {:?}, thus UUID is renewed", party_number);
             signing_room.replace_party(party_number)
         }
         else {
