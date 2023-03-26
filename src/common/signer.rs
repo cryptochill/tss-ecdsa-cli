@@ -642,7 +642,7 @@ pub fn signup(addr: &String, client: &Client, threshold: u16, room_id: String, p
     let (output, total_parties) = match answer {
         Ok(SigningPartySignup{party_order, party_uuid, room_uuid, total_joined}) => {
             println!("Signed up, party order: {:?}, joined so far: {:?}, waiting for room uuid", party_order, total_joined);
-            let now = time::SystemTime::now();
+            let mut now = time::SystemTime::now();
             let mut last_total_joined = total_joined;
             let mut party_signup = PartySignup {
                 number: party_order,
@@ -664,6 +664,8 @@ pub fn signup(addr: &String, client: &Client, threshold: u16, room_id: String, p
                         if total_joined != last_total_joined {
                             println!("Joined so far: {:?}", total_joined);
                             last_total_joined = total_joined;
+                            //Reset the signup timeout
+                            now = time::SystemTime::now();
                         }
                     },
                     Err(ManagerError{error}) => {
