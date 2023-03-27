@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::sync::RwLock;
 
-use rocket::{post, routes, State};
+use rocket::{post, routes, Ignite, Rocket, State};
 use rocket::serde::json::Json;
 
 use uuid::Uuid;
@@ -9,7 +9,7 @@ use uuid::Uuid;
 use crate::common::{Entry, Index, Key, Params, PartySignup};
 
 #[rocket::main]
-pub async fn run_manager() -> Result<(), rocket::Error> {
+pub async fn run_manager() -> Result<Rocket<Ignite>, rocket::Error> {
     //     let mut my_config = Config::development();
     //     my_config.set_port(18001);
     let db: HashMap<Key, String> = HashMap::new();
