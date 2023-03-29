@@ -23,7 +23,7 @@ use reqwest::blocking::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
-use crate::common::{broadcast, poll_for_broadcasts, poll_for_p2p, sendp2p, Params, PartySignup};
+use crate::common::{broadcast, poll_for_broadcasts, poll_for_p2p, sendp2p, SignParams, PartySignup};
 
 #[derive(Hash, PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
 pub struct TupleKey {
@@ -41,7 +41,7 @@ pub fn sign(
     vss_scheme_vec: &mut Vec<VerifiableSS<GE>>,
     paillier_key_vector: Vec<EncryptionKey>,
     y_sum: &GE,
-    params: &Params,
+    params: &SignParams,
     message: &[u8],
     f_l_new: &FE,
     sign_at_path: bool,
@@ -623,7 +623,7 @@ where
     Some(res.unwrap().text().unwrap())
 }
 
-pub fn signup(addr: &String, client: &Client, params: &Params) -> Result<PartySignup, ()> {
+pub fn signup(addr: &String, client: &Client, params: &SignParams) -> Result<PartySignup, ()> {
     let res_body = postb(&addr, &client, "signupsign", params).unwrap();
     let answer: Result<PartySignup, ()> = serde_json::from_str(&res_body).unwrap();
     return answer;

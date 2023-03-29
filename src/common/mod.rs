@@ -43,9 +43,18 @@ pub struct Entry {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct Params {
+pub struct SignParams {
     pub parties: String,
     pub threshold: String,
+    pub x: String,
+    pub y: String,
+    pub message: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct KeygenParams {
+    pub parties: String,
+    pub threshold: String
 }
 
 #[allow(dead_code)]
