@@ -25,7 +25,7 @@ use multi_party_ecdsa::protocols::multi_party_ecdsa::gg_2018::party_i::*;
 use paillier::*;
 use serde_json::json;
 
-use common::{hd_keys, keygen, manager, signer, Params};
+use common::{hd_keys, keygen, manager, signer, SignParams};
 
 mod common;
 mod test;
@@ -128,7 +128,7 @@ fn main() {
                 println!("{}", ret_dict.to_string());
             } else if let Some(sub_matches) = matches.subcommand_matches("sign") {
                 // Parse message to sign
-                let message_str = sub_matches.value_of("message").unwrap_or("");
+                let message_str = sub_matches.value_of("message").unwrap_or("").to_string();
                 let message = match hex::decode(message_str.clone()) {
                     Ok(x) => x,
                     Err(_e) => message_str.as_bytes().to_vec(),
@@ -146,9 +146,12 @@ fn main() {
                     .split("/")
                     .collect();
                 //            println!("sign me {:?} / {:?} / {:?}", manager_addr, message, params);
-                let params = Params {
+                let params = SignParams {
                     threshold: params[0].to_string(),
                     parties: params[1].to_string(),
+                    x: y_sum.x_coor().unwrap().to_str_radix(10),
+                    y: y_sum.x_coor().unwrap().to_str_radix(10),
+                    message: message_str,
                 };
                 signer::sign(
                     manager_addr,

@@ -15,10 +15,7 @@ use multi_party_ecdsa::protocols::multi_party_ecdsa::gg_2018::party_i::{
 use paillier::EncryptionKey;
 use reqwest::blocking::Client;
 
-use crate::common::{
-    aes_decrypt, aes_encrypt, broadcast, poll_for_broadcasts, poll_for_p2p, postb, sendp2p, Params,
-    PartySignup, AEAD,
-};
+use crate::common::{aes_decrypt, aes_encrypt, broadcast, poll_for_broadcasts, poll_for_p2p, postb, sendp2p, PartySignup, AEAD, KeygenParams};
 
 pub fn run_keygen(addr: &String, keysfile_path: &String, params: &Vec<&str>) {
     let THRESHOLD: u16 = params[0].parse::<u16>().unwrap();
@@ -34,7 +31,7 @@ pub fn run_keygen(addr: &String, keysfile_path: &String, params: &Vec<&str>) {
     };
 
     //signup:
-    let tn_params = Params {
+    let tn_params = KeygenParams {
         threshold: THRESHOLD.to_string(),
         parties: PARTIES.to_string(),
     };
@@ -262,7 +259,7 @@ pub fn run_keygen(addr: &String, keysfile_path: &String, params: &Vec<&str>) {
     fs::write(&keysfile_path, keygen_json).expect("Unable to save !");
 }
 
-pub fn keygen_signup(addr: &String, client: &Client, params: &Params) -> Result<PartySignup, ()> {
+pub fn keygen_signup(addr: &String, client: &Client, params: &KeygenParams) -> Result<PartySignup, ()> {
     let res_body = postb(&addr, &client, "signupkeygen", params).unwrap();
     serde_json::from_str(&res_body).unwrap()
 }

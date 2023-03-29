@@ -1,15 +1,15 @@
 use std::collections::HashMap;
 use std::sync::RwLock;
 
-use rocket::{post, routes, State};
+use rocket::{post, routes, Ignite, Rocket, State};
 use rocket::serde::json::Json;
 
 use uuid::Uuid;
 
-use crate::common::{Entry, Index, Key, Params, PartySignup};
+use crate::common::{Entry, Index, Key, KeygenParams, SignParams, PartySignup};
 
 #[rocket::main]
-pub async fn run_manager() -> Result<(), rocket::Error> {
+pub async fn run_manager() -> Result<Rocket<Ignite>, rocket::Error> {
     //     let mut my_config = Config::development();
     //     my_config.set_port(18001);
     let db: HashMap<Key, String> = HashMap::new();
@@ -81,7 +81,7 @@ fn set(db_mtx: &State<RwLock<HashMap<Key, String>>>, request: Json<Entry>) -> Js
 #[post("/signupkeygen", format = "json", data = "<request>")]
 fn signup_keygen(
     db_mtx: &State<RwLock<HashMap<Key, String>>>,
-    request: Json<Params>,
+    request: Json<KeygenParams>,
 ) -> Json<Result<PartySignup, ()>> {
     let parties = request.parties.parse::<u16>().unwrap();
     let key = "signup-keygen".to_string();
@@ -122,16 +122,29 @@ fn signup_keygen(
 #[post("/signupsign", format = "json", data = "<request>")]
 fn signup_sign(
     db_mtx: &State<RwLock<HashMap<Key, String>>>,
-    request: Json<Params>,
+    request: Json<SignParams>,
 ) -> Json<Result<PartySignup, ()>> {
     let threshold = request.threshold.parse::<u16>().unwrap();
-    let key = "signup-sign".to_string();
+    let x = &request.x;
+    let y = &request.y;
+    let message = &request.message;
+
+    // Modify the key to include x and y values
+    let key = format!("signup-sign-{}-{}-{}", x, y, message);
 
     let mut hm = db_mtx.write().unwrap();
 
     let party_signup = {
-        let value = hm.get(&key).unwrap();
-        let client_signup: PartySignup = serde_json::from_str(&value).unwrap();
+        let value = hm.entry(key.clone()).or_insert_with(|| {
+            let initial_signup = PartySignup {
+                number: 0,
+                uuid: Uuid::new_v4().to_string(),
+            };
+            serde_json::to_string(&initial_signup).unwrap()
+        });
+
+        let client_signup: PartySignup = serde_json::from_str(value).unwrap();
+
         if client_signup.number < threshold + 1 {
             PartySignup {
                 number: client_signup.number + 1,
@@ -144,6 +157,7 @@ fn signup_sign(
             }
         }
     };
+
     if party_signup.number == threshold + 1 {
         hm.insert(
             key,
@@ -151,7 +165,7 @@ fn signup_sign(
                 number: 0,
                 uuid: Uuid::new_v4().to_string(),
             })
-            .unwrap(),
+                .unwrap(),
         );
     } else {
         hm.insert(key, serde_json::to_string(&party_signup).unwrap());
