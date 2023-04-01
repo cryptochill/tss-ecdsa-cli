@@ -249,10 +249,13 @@ pub fn poll_for_p2p(
     sender_uuid: String,
 ) -> Vec<String> {
     let mut ans_vec = Vec::new();
+    let timeout = std::env::var("TSS_CLI_POLL_TIMEOUT")
+        .unwrap_or("30".to_string()).parse::<u64>().unwrap();
     for i in 1..=n {
         if i != party_num {
             let key = format!("{}-{}-{}-{}", i, party_num, round, sender_uuid);
             let index = Index { key };
+            let start_time = Instant::now();
             loop {
                 // add delay to allow the server to process request:
                 thread::sleep(delay);
@@ -265,9 +268,11 @@ pub fn poll_for_p2p(
                         break;
                     },
                     Err(ManagerError{error}) => {
+                        if start_time.elapsed().as_secs() > timeout {
+                            panic!("Polling timed out! No response received in {:?} from party number {:?}", round, i);
+                        };
                         #[cfg(debug_assertions)]
                         println!("[{:?}] party {:?} => party {:?}, error: {:?}", round, i, party_num, error);
-                        break;
                     }
                 }
             }

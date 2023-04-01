@@ -237,7 +237,7 @@ pub fn sign(
         &addr,
         &client,
         party_num_int,
-        total_parties + 1,
+        total_parties,
         delay,
         "round2",
         uuid.clone(),
