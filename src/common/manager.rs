@@ -23,29 +23,6 @@ pub async fn run_manager() -> Result<Rocket<Ignite>, rocket::Error> {
     //rocket::custom(my_config).mount("/", routes![get, set]).manage(db_mtx).launch();
 
     /////////////////////////////////////////////////////////////////
-    //////////////////////////init signups://////////////////////////
-    /////////////////////////////////////////////////////////////////
-
-    let keygen_key = "signup-keygen".to_string();
-    //let sign_key = "signup-sign".to_string();
-
-    let uuid_keygen = Uuid::new_v4().to_string();
-
-    let party1 = 0;
-    let party_signup_keygen = PartySignup {
-        number: party1,
-        uuid: uuid_keygen,
-    };
-    //let party_signup_sign = new_sign_party();
-    {
-        let mut hm = db_mtx.write().unwrap();
-        hm.insert(
-            keygen_key,
-            serde_json::to_string(&party_signup_keygen).unwrap(),
-        );
-        //hm.insert(sign_key, serde_json::to_string(&party_signup_sign).unwrap());
-    }
-    /////////////////////////////////////////////////////////////////
     rocket::build()
         .mount("/", routes![get, set, signup_keygen, signup_sign])
         .manage(db_mtx)
@@ -92,12 +69,17 @@ fn signup_keygen(
 ) -> Json<Result<PartySignup, ()>> {
     let parties = request.parties.parse::<u16>().unwrap();
     let key = "signup-keygen".to_string();
-
     let mut hm = db_mtx.write().unwrap();
 
+    let client_signup = match hm.get(&key) {
+        Some(o) => serde_json::from_str(o).unwrap(),
+        None => PartySignup {
+            number: 0,
+            uuid: Uuid::new_v4().to_string(),
+        },
+    };
+
     let party_signup = {
-        let value = hm.get(&key).unwrap();
-        let client_signup: PartySignup = serde_json::from_str(&value).unwrap();
         if client_signup.number < parties {
             PartySignup {
                 number: client_signup.number + 1,
@@ -111,18 +93,7 @@ fn signup_keygen(
         }
     };
 
-    if party_signup.number == parties {
-        hm.insert(
-            key,
-            serde_json::to_string(&PartySignup {
-                number: 0,
-                uuid: Uuid::new_v4().to_string(),
-            })
-            .unwrap(),
-        );
-    } else {
-        hm.insert(key, serde_json::to_string(&party_signup).unwrap());
-    }
+    hm.insert(key, serde_json::to_string(&party_signup).unwrap());
     Json(Ok(party_signup))
 }
 
