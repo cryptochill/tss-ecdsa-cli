@@ -11,3 +11,4 @@ Cargo.lock
 .idea
 *.priv
 *.store
+*.DS_Store

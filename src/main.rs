@@ -1,5 +1,5 @@
 #![allow(non_snake_case)]
-#![feature(proc_macro_hygiene, decl_macro)]
+//#![feature(proc_macro_hygiene, decl_macro)]
 
 extern crate clap;
 extern crate curv;

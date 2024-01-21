@@ -2,20 +2,25 @@ pub mod hd_keys;
 pub mod keygen;
 pub mod manager;
 pub mod signer;
+pub mod signing_room;
 
 use std::{iter::repeat, thread, time, time::Duration};
+use std::time::Instant;
 
 use aes_gcm::{Aes256Gcm, Nonce};
 use aes_gcm::aead::{NewAead, Aead, Payload};
 
 use curv::{
-    arithmetic::traits::Converter,
     elliptic::curves::secp256_k1::{FE, GE},
     elliptic::curves::traits::{ECPoint, ECScalar},
     BigInt,
 };
+use curv::arithmetic::Converter;
 use reqwest::blocking::Client;
 use serde::{Deserialize, Serialize};
+use curv::cryptographic_primitives::hashing::hash_sha256::HSha256;
+use curv::cryptographic_primitives::hashing::traits::Hash;
+
 
 pub type Key = String;
 
@@ -26,9 +31,32 @@ pub struct AEAD {
 }
 
 #[derive(Clone, PartialEq, Debug, Serialize, Deserialize)]
+pub struct PartySignupRequestBody {
+    pub threshold: u16,
+    pub room_id: String,
+    pub party_number: u16,  // It's better to rename this to fragment_index
+    pub party_uuid: String
+}
+
+#[derive(Clone, PartialEq, Debug, Serialize, Deserialize)]
 pub struct PartySignup {
     pub number: u16,
     pub uuid: String,
+}
+
+#[derive(Clone, PartialEq, Debug, Serialize, Deserialize)]
+pub struct SigningPartySignup {
+    pub party_order: u16,
+    pub party_uuid: String,
+    pub room_uuid: String,
+    pub total_joined: u16,
+}
+
+#[derive(Clone, PartialEq, Debug, Serialize, Deserialize)]
+pub struct SigningPartyInfo {
+    pub party_id: String,
+    pub party_order: u16,
+    pub last_ping: u64,
 }
 
 #[derive(Clone, PartialEq, Debug, Serialize, Deserialize)]
@@ -40,6 +68,11 @@ pub struct Index {
 pub struct Entry {
     pub key: Key,
     pub value: String,
+}
+
+#[derive(Clone, PartialEq, Debug, Serialize, Deserialize)]
+pub struct ManagerError {
+    pub error: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -173,20 +206,33 @@ pub fn poll_for_broadcasts(
     sender_uuid: String,
 ) -> Vec<String> {
     let mut ans_vec = Vec::new();
+    let timeout = std::env::var("TSS_CLI_POLL_TIMEOUT")
+        .unwrap_or("30".to_string()).parse::<u64>().unwrap();
     for i in 1..=n {
         if i != party_num {
             let key = format!("{}-{}-{}", i, round, sender_uuid);
             let index = Index { key };
+            let start_time = Instant::now();
             loop {
                 // add delay to allow the server to process request:
-                thread::sleep(delay);
                 let res_body = postb(&addr, &client, "get", index.clone()).unwrap();
-                let answer: Result<Entry, ()> = serde_json::from_str(&res_body).unwrap();
-                if let Ok(answer) = answer {
-                    ans_vec.push(answer.value);
-                    println!("[{:?}] party {:?} => party {:?}", round, i, party_num);
-                    break;
+                let answer: Result<Entry, ManagerError> = serde_json::from_str(&res_body).unwrap();
+                match answer {
+                    Ok(answer) => {
+                        ans_vec.push(answer.value);
+                        println!("[{:?}] party {:?} => party {:?}", round, i, party_num);
+                        break;
+                    },
+                    Err(ManagerError{error}) => {
+                        #[cfg(debug_assertions)]
+                        println!("[{:?}] party {:?} => party {:?}, error: {:?}", round, i, party_num, error);
+                    }
                 }
+                if start_time.elapsed().as_secs() > timeout {
+                    panic!("Polling timed out! No response received from party number {:?}", i);
+                };
+
+                thread::sleep(delay);
             }
         }
     }
@@ -203,19 +249,31 @@ pub fn poll_for_p2p(
     sender_uuid: String,
 ) -> Vec<String> {
     let mut ans_vec = Vec::new();
+    let timeout = std::env::var("TSS_CLI_POLL_TIMEOUT")
+        .unwrap_or("30".to_string()).parse::<u64>().unwrap();
     for i in 1..=n {
         if i != party_num {
             let key = format!("{}-{}-{}-{}", i, party_num, round, sender_uuid);
             let index = Index { key };
+            let start_time = Instant::now();
             loop {
                 // add delay to allow the server to process request:
                 thread::sleep(delay);
                 let res_body = postb(&addr, &client, "get", index.clone()).unwrap();
-                let answer: Result<Entry, ()> = serde_json::from_str(&res_body).unwrap();
-                if let Ok(answer) = answer {
-                    ans_vec.push(answer.value);
-                    println!("[{:?}] party {:?} => party {:?}", round, i, party_num);
-                    break;
+                let answer: Result<Entry, ManagerError> = serde_json::from_str(&res_body).unwrap();
+                match answer {
+                    Ok(answer) => {
+                        ans_vec.push(answer.value);
+                        println!("[{:?}] party {:?} => party {:?}", round, i, party_num);
+                        break;
+                    },
+                    Err(ManagerError{error}) => {
+                        if start_time.elapsed().as_secs() > timeout {
+                            panic!("Polling timed out! No response received in {:?} from party number {:?}", round, i);
+                        };
+                        #[cfg(debug_assertions)]
+                        println!("[{:?}] party {:?} => party {:?}, error: {:?}", round, i, party_num, error);
+                    }
                 }
             }
         }
@@ -252,4 +310,9 @@ pub fn check_sig(r: &FE, s: &FE, msg: &BigInt, pk: &GE) {
 
     let is_correct = verify(&msg, &secp_sig, &pk);
     assert!(is_correct);
+}
+
+
+fn sha256_digest(input: &[u8]) -> String {
+    return HSha256::create_hash_from_slice(input).to_hex();
 }
