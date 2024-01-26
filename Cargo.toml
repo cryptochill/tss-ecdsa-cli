@@ -11,7 +11,7 @@ name = "tss_cli"
 path = "src/main.rs"
 
 [dependencies]
-rocket = { version = "0.5.0-rc.1", features = ["json"] }
+rocket = { version = "0.5.0-rc.1", features = ["json", "tls"] }
 serde = "1.0"
 serde_json = "1.0"
 serde_derive = "1.0"
