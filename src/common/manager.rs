@@ -13,7 +13,7 @@ use crate::common::{Entry, Index, Key, ManagerError, Params, PartySignup, PartyS
 use crate::common::signing_room::SigningRoom;
 
 #[rocket::main]
-pub async fn run_manager() -> Result<Rocket<Ignite>, rocket::Error> {
+pub async fn run_manager() -> Result<(), rocket::Error> {
     //     let mut my_config = Config::development();
     //     my_config.set_port(18001);
     let ttl = std::env::var("TSS_CLI_MANAGER_TTL")
